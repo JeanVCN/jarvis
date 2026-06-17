@@ -4,6 +4,7 @@
 # Go
 bin/
 *.test
+__debug_bin*
 coverage.out
 
 # Node / Next.js

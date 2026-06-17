@@ -64,10 +64,15 @@ Infraestrutura observada:
 - Configuracao do backend centralizada em `internal/config`.
 - Conexao PostgreSQL encapsulada em `internal/database`.
 - Rotas HTTP ficam em `internal/handlers`.
-- Diretorios `ai`, `voice`, `memory`, `tools`, `agents`, `services` e `repositories` existem como limites arquiteturais para evolucao futura.
+- Middlewares HTTP compartilhados ficam em `backend/internal/middleware`.
+- `backend/internal/ai` contem o contrato `LLM` e a implementacao inicial `OllamaProvider`.
+- `backend/internal/services` contem o caso de uso inicial de chat por texto.
+- Diretorios `voice`, `memory`, `tools`, `agents` e `repositories` seguem como limites arquiteturais para evolucao futura.
 - Frontend usa App Router do Next.js em `frontend/app`.
 - Frontend separa componentes, services, hooks e types.
 - O frontend consulta o backend pelo service `frontend/services/health.ts`.
+- O frontend possui service de chat para chamar `POST /api/chat`.
+- O frontend usa `POST /api/chat/stream` para renderizar respostas do chat em tempo real via SSE.
 - URLs internas e publicas da API sao separadas por `API_INTERNAL_URL` e `NEXT_PUBLIC_API_URL`.
 
 ## Restricoes do Projeto
@@ -85,6 +90,7 @@ Restricoes observadas:
 
 - Configuracoes devem vir de environment variables.
 - O backend depende de PostgreSQL disponivel ao iniciar.
+- A integracao Ollama depende de `OLLAMA_URL` e `OLLAMA_MODEL`.
 - O health check verifica conectividade real com o banco.
 - O Compose espera que o Postgres esteja healthy antes de iniciar o backend.
 
@@ -108,10 +114,13 @@ Backend:
 - Shutdown gracioso via `SIGINT` e `SIGTERM`.
 - Respostas JSON em handlers Gin.
 - Fallbacks de environment variables por funcao auxiliar `getEnv`.
+- Provedores de IA devem ficar atras da interface `ai.LLM`.
+- Handlers de chat devem chamar services, nao provedores externos diretamente.
+- Streaming de chat usa SSE como caminho inicial; WebSocket fica reservado para fluxos bidirecionais futuros.
 
 Frontend:
 
-- Componentes React assíncronos no App Router.
+- Componentes React assíncronos no App Router para server-side e componentes client-side para interacoes.
 - Services centralizados para chamadas externas.
 - Types compartilhados em `frontend/types`.
 - Alias TypeScript `@/*`.

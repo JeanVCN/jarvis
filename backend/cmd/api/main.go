@@ -9,9 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jean/jarvis/backend/internal/ai"
 	"github.com/jean/jarvis/backend/internal/config"
 	"github.com/jean/jarvis/backend/internal/database"
 	"github.com/jean/jarvis/backend/internal/handlers"
+	"github.com/jean/jarvis/backend/internal/services"
 )
 
 func main() {
@@ -24,7 +26,9 @@ func main() {
 	}
 	defer db.Close()
 
-	router := handlers.NewRouter(db)
+	llm := ai.NewOllamaProvider(cfg.OllamaURL, cfg.OllamaModel)
+	chatService := services.NewChatService(llm)
+	router := handlers.NewRouter(db, chatService, cfg.CORSAllowedOrigin)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress(),

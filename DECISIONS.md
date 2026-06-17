@@ -177,19 +177,110 @@ Impacto:
 
 ### 2026-06-16 - Ollama Como Integracao Inicial de IA
 
-Status: planejada.
+Status: aceita.
 
 Contexto:
 
 - O contexto do projeto define Ollama como integracao inicial.
+- A fase 2 implementou o primeiro fluxo funcional de chat por texto.
 
 Decisao:
 
 - A primeira integracao de IA deve considerar Ollama antes de OpenAI e Gemini.
+- O provider Ollama deve ficar atras da interface interna `LLM`.
 
 Impacto:
 
-- O modulo `ai` deve ser desenhado para suportar provedor local inicialmente e provedores remotos no futuro.
+- O modulo `ai` suporta um provedor local inicialmente e mantem caminho para provedores remotos no futuro.
+
+### 2026-06-17 - Handlers Usam Services Para Conversa
+
+Status: aceita.
+
+Contexto:
+
+- `POST /api/chat` precisa consultar um LLM sem acoplar regras de aplicacao ao provider Ollama.
+- O projeto ja reservava `backend/internal/services` para casos de uso.
+
+Decisao:
+
+- O handler de chat deve depender de `ChatService`.
+- `ChatService` deve depender do contrato `ai.LLM`.
+- `OllamaProvider` deve ser uma implementacao concreta de `ai.LLM`, configurada no `cmd/api`.
+
+Impacto:
+
+- O endpoint fica protegido de detalhes HTTP da API do Ollama.
+- OpenAI, Gemini ou outros provedores podem ser adicionados sem trocar o contrato do handler.
+- A camada de services passa a existir com um caso de uso minimo de conversa por texto.
+
+### 2026-06-17 - CORS Local Configuravel
+
+Status: aceita.
+
+Contexto:
+
+- A tela de teste do frontend roda em `localhost:13000`.
+- O backend roda em `localhost:18080`.
+- Chamadas client-side do navegador para `/api/chat` exigem permissao CORS.
+- Em alguns ambientes, `localhost` pode adicionar atraso por resolucao IPv6/IPv4.
+
+Decisao:
+
+- O backend deve configurar CORS por `CORS_ALLOWED_ORIGIN`, com default local para desenvolvimento.
+- O default local deve aceitar `http://127.0.0.1:13000` e `http://localhost:13000`.
+- O middleware de CORS deve ficar em `backend/internal/middleware`, fora de `handlers`.
+- URLs publicas locais do frontend devem preferir `127.0.0.1`.
+
+Impacto:
+
+- A tela de teste pode chamar o backend diretamente do navegador.
+- Ambientes futuros podem ajustar a origem permitida sem alterar codigo.
+- `handlers` permanece focado em rotas e handlers HTTP.
+- O caminho local evita atrasos causados por resolucao de `localhost` quando o ambiente tenta IPv6 antes de IPv4.
+
+### 2026-06-17 - Portas Padrao Dedicadas Para Desenvolvimento
+
+Status: aceita.
+
+Contexto:
+
+- Portas `8080` e `3000` sao comuns e podem estar ocupadas por outros projetos locais.
+- O Jarvis precisa ter defaults consistentes entre env vars, backend, frontend, Docker Compose e VS Code.
+
+Decisao:
+
+- Usar `18080` como porta padrao do backend.
+- Usar `13000` como porta padrao do frontend.
+- Manter `5432` para PostgreSQL e `11434` para Ollama.
+
+Impacto:
+
+- Reduz conflito com outros projetos em desenvolvimento.
+- O F5 do VS Code, Docker Compose e fallbacks de configuracao passam a usar as mesmas portas.
+
+### 2026-06-17 - Streaming De Chat Via SSE
+
+Status: aceita.
+
+Contexto:
+
+- O endpoint inicial `POST /api/chat` usava `stream: false` no Ollama.
+- Respostas longas so chegavam ao frontend depois da geracao completa.
+- O Ollama entrega chunks em tempo real quando streaming esta ativo.
+
+Decisao:
+
+- Manter `POST /api/chat` como endpoint simples sem streaming.
+- Criar `POST /api/chat/stream` usando `text/event-stream`.
+- Usar SSE para transmitir eventos `delta`, `done` e `error`.
+- O frontend deve consumir o stream com `fetch`, pois `EventSource` nao suporta `POST` com JSON.
+
+Impacto:
+
+- O usuario passa a ver a resposta surgir em tempo real.
+- A latencia percebida fica menor sem exigir WebSocket nesta fase.
+- WebSocket permanece como opcao futura para fluxos bidirecionais mais complexos, como voz, tools ou agentes.
 
 ## Pendentes de Validacao
 
@@ -203,11 +294,11 @@ Hipotese:
 
 ### Contratos Entre Services, Repositories e Providers de IA
 
-Status: pendente de validacao.
+Status: parcialmente validado.
 
 Hipotese:
 
-- Interfaces devem ser definidas antes de implementar conversa, memoria e IA.
+- O contrato inicial `ai.LLM` atende ao primeiro fluxo de conversa, mas pode evoluir quando houver historico, streaming, tools ou memoria.
 
 ### Estrategia de Autenticacao
 

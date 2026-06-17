@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Jarvis Backend",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/backend/cmd/api",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "APP_ENV": "development",
+        "BACKEND_HOST": "0.0.0.0",
+        "BACKEND_PORT": "18080",
+        "DATABASE_URL": "postgres://jarvis:jarvis@127.0.0.1:5432/jarvis?sslmode=disable",
+        "CORS_ALLOWED_ORIGIN": "http://127.0.0.1:13000,http://localhost:13000",
+        "OLLAMA_URL": "http://127.0.0.1:11434",
+        "OLLAMA_MODEL": "llama3.2"
+      }
+    },
+    {
+      "name": "Jarvis Frontend",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend",
+      "env": {
+        "API_INTERNAL_URL": "http://127.0.0.1:18080",
+        "NEXT_PUBLIC_API_URL": "http://127.0.0.1:18080"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Jarvis Full Stack",
+      "configurations": [
+        "Jarvis Backend",
+        "Jarvis Frontend"
+      ],
+      "preLaunchTask": "dev: prepare",
+      "stopAll": true
+    }
+  ]
+}

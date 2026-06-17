@@ -16,6 +16,6 @@ WORKDIR /app
 COPY --from=builder /jarvis-api /app/jarvis-api
 
 USER jarvis
-EXPOSE 8080
+EXPOSE 18080
 
 CMD ["/app/jarvis-api"]
