@@ -15,7 +15,14 @@
         "DATABASE_URL": "postgres://jarvis:jarvis@127.0.0.1:5432/jarvis?sslmode=disable",
         "CORS_ALLOWED_ORIGIN": "http://127.0.0.1:13000,http://localhost:13000",
         "OLLAMA_URL": "http://127.0.0.1:11434",
-        "OLLAMA_MODEL": "llama3.2"
+        "OLLAMA_MODEL": "llama3.2",
+        "VOICE_STT_COMMAND": "${workspaceFolder}/scripts/jarvis-stt-fast",
+        "VOICE_STT_ARGS": "{input} --language {language} --model {model} --output_format txt --output_dir {output_dir}",
+        "VOICE_STT_MODEL": "tiny",
+        "VOICE_STT_LANGUAGE": "pt",
+        "VOICE_TTS_COMMAND": "/home/jean/.local/share/jarvis-voice/bin/piper",
+        "VOICE_TTS_ARGS": "-m {voice} -f {output}",
+        "VOICE_TTS_VOICE": "/home/jean/.local/share/jarvis-voice/voices/pt/pt_BR/jeff/medium/pt_BR-jeff-medium.onnx"
       }
     },
     {

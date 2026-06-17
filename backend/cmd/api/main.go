@@ -14,6 +14,8 @@ import (
 	"github.com/jean/jarvis/backend/internal/database"
 	"github.com/jean/jarvis/backend/internal/handlers"
 	"github.com/jean/jarvis/backend/internal/services"
+	"github.com/jean/jarvis/backend/internal/tools"
+	"github.com/jean/jarvis/backend/internal/voice"
 )
 
 func main() {
@@ -26,9 +28,19 @@ func main() {
 	}
 	defer db.Close()
 
+	toolRegistry := tools.NewRegistry()
+	mustRegisterTool(toolRegistry, tools.NewTimeTool())
+	mustRegisterTool(toolRegistry, tools.NewCalculatorTool())
+	mustRegisterTool(toolRegistry, tools.NewDefaultSystemTool())
+	toolService := services.NewToolService(toolRegistry)
+
 	llm := ai.NewOllamaProvider(cfg.OllamaURL, cfg.OllamaModel)
-	chatService := services.NewChatService(llm)
-	router := handlers.NewRouter(db, chatService, cfg.CORSAllowedOrigin)
+	chatService := services.NewChatService(llm, toolService)
+	voiceRecognizer := voice.NewCommandSpeechRecognizer(cfg.VoiceSTTCommand, voice.ParseArgs(cfg.VoiceSTTArgs), cfg.VoiceSTTModel, cfg.VoiceSTTLanguage)
+	voiceProvider := voice.NewCommandVoiceProvider(cfg.VoiceTTSCommand, voice.ParseArgs(cfg.VoiceTTSArgs), cfg.VoiceTTSVoice)
+	voiceService := services.NewVoiceService(voiceRecognizer, voiceProvider, chatService)
+
+	router := handlers.NewRouter(db, chatService, toolService, voiceService, cfg.CORSAllowedOrigin)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress(),
@@ -52,5 +64,11 @@ func main() {
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("server shutdown failed: %v", err)
+	}
+}
+
+func mustRegisterTool(registry *tools.Registry, tool tools.Tool) {
+	if err := registry.Register(tool); err != nil {
+		log.Fatalf("tool registration failed: %v", err)
 	}
 }

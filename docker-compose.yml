@@ -32,6 +32,13 @@ services:
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://127.0.0.1:13000,http://localhost:13000}
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      VOICE_STT_COMMAND: ${VOICE_STT_COMMAND:-faster-whisper}
+      VOICE_STT_ARGS: ${VOICE_STT_ARGS:-{input} --language {language} --model {model} --output_format txt --output_dir {output_dir}}
+      VOICE_STT_MODEL: ${VOICE_STT_MODEL:-tiny}
+      VOICE_STT_LANGUAGE: ${VOICE_STT_LANGUAGE:-pt}
+      VOICE_TTS_COMMAND: ${VOICE_TTS_COMMAND:-piper}
+      VOICE_TTS_ARGS: ${VOICE_TTS_ARGS:---model {voice} --output_file {output}}
+      VOICE_TTS_VOICE: ${VOICE_TTS_VOICE:-}
     ports:
       - "${BACKEND_PORT:-18080}:${BACKEND_CONTAINER_PORT:-18080}"
     extra_hosts:

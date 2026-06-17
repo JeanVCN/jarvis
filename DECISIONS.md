@@ -282,6 +282,195 @@ Impacto:
 - A latencia percebida fica menor sem exigir WebSocket nesta fase.
 - WebSocket permanece como opcao futura para fluxos bidirecionais mais complexos, como voz, tools ou agentes.
 
+### 2026-06-17 - ToolRegistry Como Fronteira De Ferramentas
+
+Status: aceita.
+
+Contexto:
+
+- A fase 3 precisa permitir que o Jarvis execute ferramentas registradas.
+- A proxima fase deve permitir que o LLM escolha ferramentas sem depender de implementacoes concretas.
+- O projeto ja usa contratos internos para evitar acoplamento direto entre handlers, services e provedores externos.
+
+Decisao:
+
+- Criar `backend/internal/tools` com interface `Tool`.
+- Usar `ToolRegistry` como ponto unico para registrar, listar, buscar e executar ferramentas.
+- Criar `ToolService` para orquestrar uso de ferramentas pela camada HTTP e por futuros fluxos de IA.
+- Registrar `TimeTool` e `CalculatorTool` na inicializacao do backend.
+- Nao conectar automaticamente Ollama e tools nesta fase.
+
+Impacto:
+
+- Novas tools podem ser adicionadas implementando `Tool` e registrando a instancia no bootstrap.
+- Handlers e services nao dependem de tools concretas.
+- A futura orquestracao LLM -> ToolRegistry pode ser implementada sem refatorar handlers ou ferramentas existentes.
+
+### 2026-06-17 - Tool Calling Simples Por JSON
+
+Status: substituida parcialmente por roteamento local para tools obvias.
+
+Contexto:
+
+- O Jarvis precisa decidir entre responder normalmente e executar uma tool.
+- A solucao deve funcionar com Ollama e com a interface `ai.LLM` atual.
+- O projeto nao deve adotar frameworks externos de agentes nesta fase.
+
+Decisao:
+
+- Implementar a orquestracao no `ChatService`.
+- Instruir o LLM por prompt a responder texto normal ou JSON no formato `{"tool":"nome","input":"entrada"}`.
+- Quando houver JSON valido, executar a tool via `ToolService` e `ToolRegistry`.
+- Fazer uma segunda chamada ao LLM com o resultado da tool para gerar resposta final amigavel.
+- Manter o streaming SSE do frontend, mas enviar a resposta final como um unico delta nesta fase.
+
+Impacto:
+
+- TimeTool, CalculatorTool e SystemTool podem ser usadas automaticamente pelo chat.
+- O `ToolRegistry` continua sendo a unica fonte de registro e execucao de ferramentas.
+- Fluxos com multiplas chamadas de tools podem ser adicionados depois sem trocar handlers.
+
+### 2026-06-17 - Roteamento Local Para Tools Obvias
+
+Status: aceita.
+
+Contexto:
+
+- A decisao por JSON feita pelo LLM antes de toda resposta adicionava uma chamada extra ao Ollama.
+- Essa chamada extra aumentava a latencia tambem para mensagens comuns.
+- O endpoint de streaming acabava enviando a resposta apenas depois do ciclo completo, perdendo o beneficio do SSE.
+- As tools atuais cobrem intencoes simples e reconheciveis: hora/data, calculos basicos e acoes controladas do sistema.
+
+Decisao:
+
+- `ChatService` deve detectar localmente apenas casos obvios para `TimeTool`, `CalculatorTool` e `SystemTool`.
+- Mensagens comuns devem chamar `LLM.Stream` diretamente no endpoint de stream.
+- Quando uma tool for usada, a execucao continua passando por `ToolService` e `ToolRegistry`.
+- Tools simples devem retornar respostas deterministicas curtas, sem chamada extra ao LLM.
+
+Impacto:
+
+- Mensagens normais voltam a ter streaming real e menor latencia percebida.
+- Comandos de sistema deixam de depender do julgamento do LLM depois que a tool ja foi escolhida.
+- Tools atuais continuam automaticas sem acoplar o sistema a implementacoes concretas.
+- Um planejador futuro por LLM pode ser adicionado para casos nao obvios, desde que preserve o caminho rapido de streaming.
+
+### 2026-06-17 - SystemTool Com Acoes Pre-Cadastradas
+
+Status: aceita.
+
+Contexto:
+
+- O Jarvis deve poder executar acoes no sistema operacional.
+- Executar comandos arbitrarios criaria risco alto.
+- A entrada do usuario ou do LLM nao deve virar comando de shell.
+
+Decisao:
+
+- Criar `SystemTool` com acoes explicitamente registradas.
+- A entrada da tool representa apenas o nome da acao.
+- Usar comandos e argumentos definidos no codigo da action, sem shell livre.
+- Acoes iniciais: `open_browser`, `open_vscode`, `open_terminal`, `open_spotify` e `lock_screen`.
+
+Impacto:
+
+- A tool pode abrir programas e bloquear a tela dentro de uma lista controlada.
+- Acoes futuras podem ser adicionadas de forma explicita e revisavel.
+- Inputs desconhecidos retornam erro e nao sao executados.
+
+### 2026-06-17 - Voz Local Por Contratos E Comandos Configuraveis
+
+Status: aceita.
+
+Contexto:
+
+- A experiencia principal do Jarvis deve passar a ser voz.
+- STT e TTS devem funcionar localmente, sem dependencia obrigatoria de APIs pagas.
+- Faster Whisper e Piper sao boas opcoes iniciais, mas o projeto deve permitir troca futura.
+
+Decisao:
+
+- Criar `backend/internal/voice` com os contratos `SpeechRecognizer` e `VoiceProvider`.
+- Implementar providers por comandos locais configuraveis por env vars.
+- Usar placeholders como `{input}`, `{output}`, `{language}`, `{model}` e `{voice}` para adaptar CLIs diferentes.
+- Executar os comandos diretamente com `exec.CommandContext`, sem shell.
+- Criar `VoiceService` para orquestrar STT -> ChatService -> TTS.
+- Criar `POST /api/voice/conversation` como endpoint inicial de conversa por audio.
+
+Impacto:
+
+- Faster Whisper, Piper ou alternativas locais podem ser conectados sem alterar handlers.
+- Ambientes sem binarios/modelos configurados retornam `voice_provider_unavailable`.
+- A base fica preparada para wake word e streaming de audio em fases futuras.
+
+### 2026-06-17 - STT Local Otimizado Para Baixa Latencia
+
+Status: aceita.
+
+Contexto:
+
+- O STT inicial executa um comando local por fala.
+- Cada execucao inicia Python e carrega o modelo Whisper novamente.
+- O modelo `small` melhora precisao, mas aumenta a latencia em comandos curtos.
+
+Decisao:
+
+- Usar `tiny` como modelo STT default em desenvolvimento.
+- Adicionar um wrapper local rapido com `beam_size=1`, `best_of=1` e `condition_on_previous_text=false`.
+- Manter `base` e `small` como opcoes configuraveis por `VOICE_STT_MODEL` quando a precisao for mais importante.
+
+Impacto:
+
+- A transcricao de comandos curtos deve responder mais rapido.
+- A precisao pode cair em frases longas ou audio ruidoso.
+- A evolucao recomendada continua sendo um provider STT persistente para manter o modelo carregado entre requisicoes.
+
+### 2026-06-17 - Interface Principal Orientada A Voz
+
+Status: aceita.
+
+Contexto:
+
+- A tela principal anterior era centrada em chat e ferramentas manuais.
+- A nova fase pede que voz seja a experiencia principal e texto seja fallback.
+
+Decisao:
+
+- Criar `VoiceAssistant` como componente principal da home.
+- Usar estados visuais `Idle`, `Listening`, `Thinking` e `Speaking`.
+- Animar `Listening` com volume do microfone e `Speaking` com volume do audio reproduzido.
+- Manter `ChatPanel` recolhido sob `Modo Texto`.
+- Manter `ToolsPanel` recolhido para desenvolvimento e debug.
+
+Impacto:
+
+- A primeira tela passa a parecer um assistente virtual, nao um formulario administrativo.
+- O modo texto continua disponivel para fallback e depuracao.
+- A UI fica pronta para wake word e streaming de audio futuros.
+
+### 2026-06-17 - Home Como HUD De Assistente
+
+Status: aceita.
+
+Contexto:
+
+- A primeira versao da interface de voz ainda parecia um formulario ou painel administrativo.
+- A experiencia principal deve transmitir assistente pessoal, IA avancada e sistema futurista.
+
+Decisao:
+
+- Remover texto hero e paineis centrais da primeira tela.
+- Usar um nucleo central animado como elemento principal.
+- Exibir hora/data no canto superior esquerdo e estado no canto superior direito.
+- Colocar o botao circular de voz no centro inferior.
+- Mover modo texto, tools e health para paineis laterais secundarios.
+- Usar paleta escura com azul/ciano e evitar verde forte na tela principal.
+
+Impacto:
+
+- Ao abrir a aplicacao, a primeira impressao passa a ser de assistente de IA, nao de dashboard.
+- O modo texto continua disponivel sem competir com a experiencia de voz.
+
 ## Pendentes de Validacao
 
 ### Estrategia de Migracoes

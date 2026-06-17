@@ -29,7 +29,7 @@ O **Jarvis** nasce como um assistente pessoal local, modular e evolutivo.
 
 A ideia e construir, passo a passo, um sistema capaz de conversar por texto e voz, manter memoria persistente, executar ferramentas, coordenar agentes autonomos e rodar com baixo custo operacional em ambiente Linux.
 
-Este projeto ainda esta em desenvolvimento. A fase atual inclui a fundacao tecnica e a primeira integracao funcional de chat por texto com Ollama.
+Este projeto ainda esta em desenvolvimento. A fase atual inclui a fundacao tecnica, conversa por texto com Ollama, infraestrutura de ferramentas, tool calling simples pelo LLM e uma primeira interface de voz local.
 
 ```text
 Voce  ->  Navegador  ->  Jarvis API  ->  Memoria / IA / Ferramentas
@@ -54,7 +54,7 @@ Voce  ->  Navegador  ->  Jarvis API  ->  Memoria / IA / Ferramentas
 
 ## 🚧 Status Atual
 
-O projeto esta na **Fase 2: Integracao inicial com Ollama**.
+O projeto esta na **Fase 5: Interface de Voz e Conversacao Natural**.
 
 Ja existe:
 
@@ -64,18 +64,27 @@ Ja existe:
 - ✅ Endpoint `GET /health`
 - ✅ Endpoint `POST /api/chat`
 - ✅ Endpoint `POST /api/chat/stream` com SSE
+- ✅ Endpoint `GET /api/tools`
+- ✅ Endpoint `POST /api/tools/execute`
 - ✅ Health check validando conexao com o banco
 - ✅ Integracao inicial com Ollama via backend
+- ✅ `ToolRegistry` com `TimeTool`, `CalculatorTool` e `SystemTool`
+- ✅ Chat capaz de acionar tools automaticamente por JSON simples
+- ✅ Endpoint `POST /api/voice/conversation`
+- ✅ Contratos de voz `SpeechRecognizer` e `VoiceProvider`
+- ✅ Interface principal baseada em voz
 - ✅ Tela simples de teste de chat com resposta em tempo real
+- ✅ Tela simples de teste de ferramentas
 - ✅ Configuracao por environment variables
 - ✅ Estrutura preparada para IA, voz, memoria, ferramentas e agentes
 - ✅ Documentacao arquitetural viva
 
 Ainda nao existe:
 
-- ❌ Voz
 - ❌ Agentes autonomos
-- ❌ Sistema de ferramentas
+- ❌ Chamadas multiplas de tools em uma mesma interacao
+- ❌ Wake word
+- ❌ Streaming bidirecional de audio
 - ❌ Autenticacao
 
 ## 🧰 Stack
@@ -164,6 +173,18 @@ Acesse:
 
 Para o chat funcionar, mantenha o Ollama rodando e o modelo configurado em `OLLAMA_MODEL` disponivel localmente.
 
+Para voz funcionar, configure binarios e modelos locais de STT/TTS. Os defaults esperam comandos compativeis com Faster Whisper e Piper. O modelo `tiny` prioriza baixa latencia para comandos curtos; use `base` ou `small` se precisar de mais precisao:
+
+```env
+VOICE_STT_COMMAND=faster-whisper
+VOICE_STT_ARGS={input} --language {language} --model {model} --output_format txt --output_dir {output_dir}
+VOICE_STT_MODEL=tiny
+VOICE_STT_LANGUAGE=pt
+VOICE_TTS_COMMAND=piper
+VOICE_TTS_ARGS=--model {voice} --output_file {output}
+VOICE_TTS_VOICE=/caminho/para/voz-pt_BR.onnx
+```
+
 ## ▶️ Rodando Pelo VS Code
 
 O repositorio inclui configuracao para iniciar o ambiente pelo F5.
@@ -233,6 +254,124 @@ Resposta esperada:
 ```json
 {
   "response": "Ola, como posso ajudar?"
+}
+```
+
+## 🛠️ Tools
+
+Listar ferramentas:
+
+```bash
+curl http://127.0.0.1:18080/api/tools
+```
+
+Resposta esperada:
+
+```json
+[
+  {
+    "name": "calculator",
+    "description": "Executa calculos basicos"
+  },
+  {
+    "name": "system",
+    "description": "Executa acoes controladas do sistema operacional. Acoes permitidas: lock_screen, open_browser, open_spotify, open_terminal, open_vscode"
+  },
+  {
+    "name": "time",
+    "description": "Retorna data e hora atual"
+  }
+]
+```
+
+Executar ferramenta:
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/tools/execute \
+  -H "Content-Type: application/json" \
+  -d '{"tool":"calculator","input":"25 * 4"}'
+```
+
+Resposta esperada:
+
+```json
+{
+  "result": "100"
+}
+```
+
+Executar uma acao controlada do sistema:
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/tools/execute \
+  -H "Content-Type: application/json" \
+  -d '{"tool":"system","input":"open_vscode"}'
+```
+
+O chat tambem pode acionar tools automaticamente. Exemplos de mensagens:
+
+```text
+Que horas sao?
+Quanto e 25 * 4?
+Abra o navegador
+Abra o VSCode
+```
+
+O backend orienta o LLM a responder normalmente ou retornar JSON como:
+
+```json
+{
+  "tool": "calculator",
+  "input": "25 * 4"
+}
+```
+
+Quando isso acontece, a tool e executada via `ToolRegistry` e o resultado volta ao LLM para gerar a resposta final.
+
+## 🎙️ Voz
+
+Checar se STT/TTS locais estao disponiveis para o backend:
+
+```bash
+curl http://127.0.0.1:18080/api/voice/status
+```
+
+Resposta esperada quando tudo esta configurado:
+
+```json
+{
+  "sttAvailable": true,
+  "ttsAvailable": true,
+  "sttCommand": "faster-whisper",
+  "ttsCommand": "piper",
+  "message": "voice_ready"
+}
+```
+
+Endpoint de conversa por voz:
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/voice/conversation \
+  -F "audio=@fala.webm;type=audio/webm" \
+  -F "language=pt"
+```
+
+Resposta esperada:
+
+```json
+{
+  "transcript": "Que horas sao?",
+  "response": "Agora sao 17:10.",
+  "audioContentType": "audio/wav",
+  "audioBase64": "..."
+}
+```
+
+Se STT/TTS local nao estiver instalado ou configurado, o backend retorna:
+
+```json
+{
+  "error": "voice_provider_unavailable"
 }
 ```
 

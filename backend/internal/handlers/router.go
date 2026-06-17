@@ -7,7 +7,7 @@ import (
 	"github.com/jean/jarvis/backend/internal/services"
 )
 
-func NewRouter(db *database.Postgres, chatService *services.ChatService, corsAllowedOrigin string) *gin.Engine {
+func NewRouter(db *database.Postgres, chatService *services.ChatService, toolService *services.ToolService, voiceService *services.VoiceService, corsAllowedOrigin string) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(middleware.CORS(corsAllowedOrigin))
@@ -18,6 +18,14 @@ func NewRouter(db *database.Postgres, chatService *services.ChatService, corsAll
 	chatHandler := NewChatHandler(chatService)
 	router.POST("/api/chat", chatHandler.Chat)
 	router.POST("/api/chat/stream", chatHandler.Stream)
+
+	toolHandler := NewToolHandler(toolService)
+	router.GET("/api/tools", toolHandler.List)
+	router.POST("/api/tools/execute", toolHandler.Execute)
+
+	voiceHandler := NewVoiceHandler(voiceService)
+	router.GET("/api/voice/status", voiceHandler.Status)
+	router.POST("/api/voice/conversation", voiceHandler.Converse)
 
 	return router
 }

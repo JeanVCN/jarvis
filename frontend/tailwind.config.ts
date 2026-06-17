@@ -10,7 +10,7 @@ const config: Config = {
       colors: {
         surface: "#101820",
         panel: "#17212b",
-        accent: "#33d6a6",
+        accent: "#00eaff",
       },
     },
   },

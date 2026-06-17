@@ -66,13 +66,18 @@ Infraestrutura observada:
 - Rotas HTTP ficam em `internal/handlers`.
 - Middlewares HTTP compartilhados ficam em `backend/internal/middleware`.
 - `backend/internal/ai` contem o contrato `LLM` e a implementacao inicial `OllamaProvider`.
-- `backend/internal/services` contem o caso de uso inicial de chat por texto.
+- `backend/internal/services` contem o caso de uso inicial de chat por texto, tool calling simples e service de tools.
+- `backend/internal/tools` contem o contrato `Tool`, o `ToolRegistry` e ferramentas iniciais, incluindo `SystemTool`.
+- `backend/internal/voice` contem os contratos `SpeechRecognizer` e `VoiceProvider` e providers locais por comando configuravel.
 - Diretorios `voice`, `memory`, `tools`, `agents` e `repositories` seguem como limites arquiteturais para evolucao futura.
 - Frontend usa App Router do Next.js em `frontend/app`.
 - Frontend separa componentes, services, hooks e types.
 - O frontend consulta o backend pelo service `frontend/services/health.ts`.
 - O frontend possui service de chat para chamar `POST /api/chat`.
 - O frontend usa `POST /api/chat/stream` para renderizar respostas do chat em tempo real via SSE.
+- O frontend possui service de tools para chamar `GET /api/tools` e `POST /api/tools/execute`.
+- O frontend possui interface principal de voz com estados `Idle`, `Listening`, `Thinking` e `Speaking`.
+- A home do frontend deve priorizar um HUD de voz com nucleo central animado; chat e tools devem permanecer secundarios.
 - URLs internas e publicas da API sao separadas por `API_INTERNAL_URL` e `NEXT_PUBLIC_API_URL`.
 
 ## Restricoes do Projeto
@@ -116,6 +121,12 @@ Backend:
 - Fallbacks de environment variables por funcao auxiliar `getEnv`.
 - Provedores de IA devem ficar atras da interface `ai.LLM`.
 - Handlers de chat devem chamar services, nao provedores externos diretamente.
+- Tools devem ficar atras da interface `tools.Tool` e ser executadas pelo `ToolRegistry`.
+- A integracao entre LLM e tools ocorre no `ChatService`, sem acoplar Ollama diretamente as ferramentas.
+- Tool calling inicial usa JSON simples no formato `{"tool":"nome","input":"entrada"}`.
+- `SystemTool` deve executar apenas acoes pre-cadastradas e nao deve permitir comandos arbitrarios.
+- Providers de voz devem ficar atras de `SpeechRecognizer` e `VoiceProvider`.
+- STT/TTS locais sao configurados por env vars e nao devem acoplar handlers a Faster Whisper, Piper ou outro binario especifico.
 - Streaming de chat usa SSE como caminho inicial; WebSocket fica reservado para fluxos bidirecionais futuros.
 
 Frontend:
