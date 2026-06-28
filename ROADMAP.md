@@ -51,6 +51,14 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - Modo texto mantido recolhido como fallback.
 - Interface principal refinada como HUD futurista com nucleo central animado.
 - Chat e tools movidos para paineis laterais secundarios.
+- Servidor STT local persistente adicionado para manter modelo carregado entre falas.
+- VAD local no frontend adicionado para detectar fim de fala sem clique.
+- Wake word simples por transcricao adicionada para ignorar audio sem chamada ao Jarvis.
+- Modulo `voice-agent` criado como fronteira separada para evoluir voz realtime com Pipecat/LiveKit.
+- `voice-agent` ja possui cliente do Jarvis Core via `POST /api/chat/stream`, modo console, servidor local de health/smoke test e testes do parser SSE.
+- `voice-agent` emite tokens de sessao LiveKit para clientes desktop/Android via `POST /livekit/session`.
+- Frontend chama o `voice-agent` por `NEXT_PUBLIC_VOICE_AGENT_URL`, entra na sala LiveKit e publica o microfone a partir do HUD principal.
+- `voice-agent` possui participante realtime que entra na sala LiveKit, assina faixas de audio e contabiliza frames recebidos.
 
 ## Em Andamento
 
@@ -58,7 +66,8 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - Documentacao viva para continuidade entre sessoes de IA e colaboradores.
 - Definicao de fronteiras entre modulos futuros.
 - Preparacao para futuras tools como web search, memoria, arquivos e automacao residencial.
-- Preparacao para wake word e streaming de audio futuros.
+- Preparacao para keyword spotting acustico e streaming de audio futuros.
+- Migracao da experiencia principal de voz do fluxo batch para um agente realtime.
 
 ## Parcialmente Implementado
 
@@ -66,7 +75,8 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - `tools`: possui contrato, registry, TimeTool, CalculatorTool e SystemTool; ainda nao ha ferramentas externas avancadas.
 - `agents`: diretorio existe, mas nao ha agentes autonomos.
 - `ai`: possui interface `LLM` e provider inicial Ollama; ainda nao ha OpenAI ou Gemini.
-- `voice`: possui contratos, provedores locais por comando, endpoint de conversa e UI de captura; depende de binarios/modelos locais de STT/TTS instalados no ambiente.
+- `voice`: possui contratos, provedores locais por comando/HTTP, servidor STT local, endpoint de conversa, VAD no frontend e UI de captura; depende de binarios/modelos locais de STT/TTS instalados no ambiente e fica como fallback batch.
+- `voice-agent`: possui base separada para voz realtime, emissao de token LiveKit, integracao inicial com o HUD e participante que assina audio; ainda nao transcreve frames com STT/Pipecat.
 - `services`: possui chat com roteamento local para tools obvias e service de tools; ainda nao ha memoria ou agentes.
 - `repositories`: diretorio existe, mas ainda nao ha repositorios de dominio.
 - `hooks`: diretorio frontend existe, mas ainda nao ha hooks.
@@ -83,13 +93,15 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 8. Definir padrao de observabilidade minimo, como logs estruturados e erros padronizados.
 9. Adicionar configuracao seletiva de provedores de IA quando OpenAI ou Gemini forem implementados.
 10. Evoluir tool calling por LLM para casos nao obvios sem prejudicar o streaming de mensagens normais.
-11. Configurar e documentar modelos locais recomendados para Faster Whisper e Piper.
-12. Adicionar wake word local.
-13. Evoluir voz para streaming bidirecional de audio.
+11. Implementar transporte realtime no `voice-agent` com LiveKit/Pipecat.
+12. Conectar STT/TTS streaming ao `voice-agent` e medir latencia por etapa.
+13. Configurar e documentar modelos locais recomendados para Faster Whisper, Sherpa-ONNX, Piper/Kokoro e alternativas.
+14. Evoluir wake word por transcricao para keyword spotting acustico local.
+15. Criar cliente Android/APK apontando para o servico local via transporte realtime.
 
 ## Futuras Evolucoes
 
-- Wake word para conversacao por voz.
+- Keyword spotting acustico para wake word.
 - Sintese de voz.
 - Transcricao de audio.
 - Sistema de ferramentas executaveis com mais integracoes externas.
@@ -109,7 +121,8 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - `memory` depende de schema de banco, repositories e definicao de dados persistidos.
 - `tools` expoe um `ToolRegistry` que deve ser usado por services, IA e agentes para executar ferramentas sem depender de implementacoes concretas.
 - `agents` depende de `ai`, `tools`, `memory` e regras de permissao.
-- `voice` depende de binarios/modelos locais configurados por env vars e usa o fluxo de chat existente.
+- `voice` batch depende de binarios/modelos locais configurados por env vars e usa o fluxo de chat existente.
+- `voice-agent` depende do Jarvis Core via `POST /api/chat/stream`; transporte realtime deve permanecer desacoplado de tools e comandos diretos.
 - UI de chat final depende de historico e modelo de conversa; a tela atual valida a integracao inicial com streaming.
 - Acesso remoto depende de autenticacao e configuracao segura de rede.
 
@@ -121,5 +134,6 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - Documentacao e ADRs podem evoluir em paralelo com qualquer modulo.
 - Observabilidade basica pode evoluir em paralelo com features de produto.
 - Testes de handlers/services podem evoluir em paralelo com a UI.
-- Voice pode evoluir em paralelo com UI e providers, desde que preserve os contratos `SpeechRecognizer` e `VoiceProvider`.
+- Voice batch pode evoluir em paralelo com UI e providers, desde que preserve os contratos `SpeechRecognizer` e `VoiceProvider`.
+- Voice realtime pode evoluir em paralelo no `voice-agent`, desde que o backend Go continue sendo a autoridade para tools, memoria e permissoes.
 - Agents devem aguardar definicao de tools, memory e limites de seguranca.

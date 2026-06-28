@@ -3,6 +3,8 @@ export type VoiceConversationResponse = {
   response: string;
   audioContentType: string;
   audioBase64: string;
+  ignored: boolean;
+  wakeWordDetected: boolean;
 };
 
 export type VoiceStatus = {
@@ -11,6 +13,7 @@ export type VoiceStatus = {
   sttCommand: string;
   ttsCommand: string;
   message: string;
+  privacyMode: string;
 };
 
 export type AssistantState = "idle" | "listening" | "thinking" | "speaking";

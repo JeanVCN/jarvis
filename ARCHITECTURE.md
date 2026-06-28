@@ -34,6 +34,11 @@ Documentacao arquitetural do estado atual do Jarvis.
 │   ├── Dockerfile
 │   ├── package.json
 │   └── tsconfig.json
+├── voice-agent/
+│   ├── src/jarvis_voice_agent/
+│   ├── tests/
+│   ├── pyproject.toml
+│   └── README.md
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -53,7 +58,7 @@ Documentacao arquitetural do estado atual do Jarvis.
 - `backend/internal/ai`: contrato `LLM` e provedores de IA; contem o provider inicial Ollama.
 - `backend/internal/memory`: reservado para memoria persistente.
 - `backend/internal/tools`: contrato `Tool`, registry, TimeTool, CalculatorTool e SystemTool.
-- `backend/internal/voice`: contratos `SpeechRecognizer` e `VoiceProvider`, alem de providers locais por comando.
+- `backend/internal/voice`: contratos `SpeechRecognizer` e `VoiceProvider`, provider STT por comando, provider STT HTTP local e provider TTS por comando.
 - `backend/internal/agents`: reservado para agentes autonomos.
 - `backend/internal/voice`: reservado para voz.
 - `backend/migrations`: scripts SQL de schema.
@@ -65,8 +70,19 @@ Documentacao arquitetural do estado atual do Jarvis.
 - `frontend/components`: componentes reutilizaveis.
 - `frontend/services`: chamadas para APIs.
 - `frontend/types`: tipos TypeScript compartilhados.
+- `frontend/services/realtime-voice.ts`: cliente do `voice-agent` e do `livekit-client` para criar sessao, entrar na sala e publicar o microfone.
+- `frontend/types/realtime-voice.ts`: contrato de sessao LiveKit usado pelo frontend.
 - `frontend/hooks`: reservado para hooks.
 - `frontend/public`: reservado para assets publicos.
+
+### Voice Agent
+
+- `voice-agent`: fronteira nova para voz realtime, separada do backend Go.
+- `voice-agent/src/jarvis_voice_agent/jarvis_core.py`: cliente do Jarvis Core via `POST /api/chat/stream`.
+- `voice-agent/src/jarvis_voice_agent/server.py`: servidor local minimo para health check e smoke test de chat.
+- `voice-agent/src/jarvis_voice_agent/console.py`: modo console para validar streaming core sem audio.
+- `voice-agent/src/jarvis_voice_agent/livekit.py`: emissor de tokens LiveKit para clientes desktop/Android.
+- `voice-agent/src/jarvis_voice_agent/realtime.py`: participante LiveKit opcional que assina audio da sala para futura transcricao.
 
 ## Fluxos Entre Modulos
 
@@ -80,7 +96,7 @@ Documentacao arquitetural do estado atual do Jarvis.
 6. `tools.NewRegistry` cria o registry de ferramentas.
 7. `TimeTool`, `CalculatorTool` e `SystemTool` sao registradas no registry.
 8. `services.NewToolService` recebe o `ToolRegistry`.
-9. Providers de STT/TTS sao criados a partir da configuracao.
+9. Providers de STT/TTS sao criados a partir da configuracao; STT pode usar comando local ou servidor HTTP local persistente.
 10. `services.NewVoiceService` recebe recognizer, provider e `ChatService`.
 11. `handlers.NewRouter` cria `gin.Engine`.
 12. `NewHealthHandler` recebe `database.Postgres`.
@@ -102,22 +118,21 @@ Documentacao arquitetural do estado atual do Jarvis.
 1. Cliente chama `POST /api/chat` com `{ "message": "..." }`.
 2. `ChatHandler` valida JSON, mensagem obrigatoria e tamanho maximo.
 3. Handler cria contexto com timeout de 60 segundos.
-4. `ChatService` monta um prompt com as tools registradas no `ToolRegistry`.
-5. `ChatService` chama `ai.LLM`.
-6. Se o LLM responder texto normal, backend retorna `200` com `{ "response": "..." }`.
-7. Se o LLM responder JSON `{ "tool": "...", "input": "..." }`, `ChatService` executa a tool pelo `ToolService`.
-8. `ToolService` delega a execucao ao `ToolRegistry`.
-9. `ChatService` envia o resultado da tool ao LLM em uma segunda chamada.
-10. Backend retorna a resposta final com `{ "response": "..." }`.
-11. Erros de validacao retornam `400`; falhas do LLM retornam `502`.
+4. `ChatService` verifica se a mensagem corresponde a uma tool obvia.
+5. Se nenhuma tool for necessaria, `ChatService` chama `ai.LLM`.
+6. Se uma tool for necessaria, `ChatService` executa a tool pelo `ToolService`.
+7. `ToolService` delega a execucao ao `ToolRegistry`.
+8. Tools simples retornam respostas deterministicas sem chamada extra ao LLM.
+9. Backend retorna `{ "response": "..." }`.
+10. Erros de validacao retornam `400`; falhas do LLM retornam `502`.
 
 ### Chat Por Texto Com Streaming
 
 1. Cliente chama `POST /api/chat/stream` com `{ "message": "..." }`.
 2. `ChatHandler` valida JSON, mensagem obrigatoria e tamanho maximo.
 3. Handler responde com `Content-Type: text/event-stream`.
-4. `ChatService` executa o mesmo fluxo de tool calling do chat sem streaming.
-5. A resposta final e enviada ao frontend como evento SSE `delta`.
+4. Se nenhuma tool for necessaria, `ChatService` chama `LLM.Stream`.
+5. Se uma tool for necessaria, `ChatService` envia a resposta deterministica como evento SSE `delta`.
 6. Ao terminar, backend envia evento SSE `done`.
 7. Falhas durante a geracao viram evento SSE `error`.
 
@@ -134,7 +149,7 @@ Documentacao arquitetural do estado atual do Jarvis.
 9. Backend retorna `{ "result": "..." }`.
 10. Ferramenta inexistente retorna `404`; input invalido da calculadora retorna `400`.
 
-O fluxo manual de tools permanece disponivel para desenvolvimento e debug. No chat, a decisao automatica de uso de tool acontece no `ChatService` com JSON simples retornado pelo LLM.
+O fluxo manual de tools permanece disponivel para desenvolvimento e debug. No chat, a decisao automatica de uso de tool acontece no `ChatService` por roteamento local de casos obvios.
 
 ### SystemTool
 
@@ -149,24 +164,39 @@ O fluxo manual de tools permanece disponivel para desenvolvimento e debug. No ch
 ### Voz
 
 1. Cliente chama `POST /api/voice/conversation` com multipart `audio`.
-2. `VoiceHandler` valida upload, tamanho maximo e idioma.
+2. `VoiceHandler` valida upload, tamanho maximo, idioma e `wakeRequired`.
 3. `VoiceService` chama `voice.SpeechRecognizer`.
-4. O provider local de STT grava o audio em arquivo temporario e executa o comando configurado.
-5. A transcricao e enviada para `ChatService`.
-6. `ChatService` pode usar LLM e tools pelo `ToolRegistry`.
-7. `VoiceService` chama `voice.VoiceProvider` para gerar audio da resposta.
-8. O provider local de TTS executa o comando configurado e le o arquivo de audio gerado.
-9. Backend retorna transcript, resposta textual, content type do audio e audio em base64.
+4. O provider de STT pode chamar um servidor HTTP local persistente ou executar um comando local com arquivo temporario.
+5. Se `wakeRequired=true` e a transcricao nao contiver a wake word, o backend retorna `ignored=true` sem chamar LLM, tools ou TTS.
+6. Se houver wake word ou se `wakeRequired=false`, a transcricao e enviada para `ChatService`.
+7. `ChatService` pode usar LLM e tools pelo `ToolRegistry`.
+8. `VoiceService` chama `voice.VoiceProvider` para gerar audio da resposta.
+9. O provider local de TTS executa o comando configurado e le o arquivo de audio gerado.
+10. Backend retorna transcript, resposta textual, flags de wake word, content type do audio e audio em base64.
 
-Os providers de voz usam comandos locais configurados por env vars e nao dependem de APIs pagas por padrao. A troca futura de tecnologia deve implementar os mesmos contratos.
+Os providers de voz usam processamento local configurado por env vars e nao dependem de APIs pagas por padrao. A troca futura de tecnologia deve implementar os mesmos contratos. O audio bruto nao deve ser persistido por padrao.
+
+### Voice Agent Realtime
+
+1. Cliente desktop ou Android abre uma sessao realtime com o agente de voz.
+2. O cliente solicita `POST /livekit/session` no `voice-agent` para receber URL, sala, identidade e token LiveKit.
+3. O transporte alvo e WebRTC via LiveKit, com pipeline Pipecat para VAD, STT, LLM e TTS streaming.
+4. Apos transcrever uma fala, o agente chama `POST /api/chat/stream` no Jarvis Core.
+5. O Jarvis Core continua responsavel por LLM, tools, permissoes, memoria futura e comandos do sistema.
+6. O agente transforma os deltas SSE em texto para TTS streaming.
+7. O audio de resposta volta pelo transporte realtime.
+
+O slice implementado em `voice-agent` valida a conexao com o Jarvis Core sem audio, por console e HTTP local, emite tokens LiveKit para clientes desktop/Android e possui um participante realtime que assina audio da sala. O endpoint batch `POST /api/voice/conversation` permanece como fallback e caminho de debug, nao como arquitetura principal para experiencia natural.
 
 ### Frontend
 
 1. `app/page.tsx` renderiza a interface principal de voz.
-2. `VoiceAssistant` captura audio com `MediaRecorder`.
-3. `VoiceAssistant` anima `Listening` com volume do microfone.
-4. `sendVoiceConversation` envia `POST /api/voice/conversation` para `NEXT_PUBLIC_API_URL`.
-5. `VoiceAssistant` reproduz audio de resposta e anima `Speaking` com volume da reproducao.
+2. `VoiceAssistant` arma/desarma a escuta por botao.
+3. `VoiceAssistant` captura audio com `MediaRecorder`.
+4. `VoiceAssistant` usa VAD local com `AnalyserNode` para detectar inicio/fim de fala.
+5. `sendVoiceConversation` envia `POST /api/voice/conversation` para `NEXT_PUBLIC_API_URL` com `wakeRequired=true`.
+6. Se o backend retornar `ignored=true`, a interface volta ao standby sem resposta falada.
+7. `VoiceAssistant` reproduz audio de resposta e anima `Speaking` com volume da reproducao.
 6. `ChatPanel` permanece recolhido em `Modo Texto`.
 7. `ToolsPanel` permanece recolhido para desenvolvimento e debug.
 8. `HealthPanel` chama `getHealth`.
@@ -177,6 +207,8 @@ Os providers de voz usam comandos locais configurados por env vars e nao depende
 1. `postgres` sobe com healthcheck.
 2. `backend` espera `postgres` ficar healthy.
 3. `frontend` depende do `backend` iniciado.
+4. `voice-agent` roda como servico separado e depende do `backend`.
+5. `livekit` fica disponivel no profile opcional `realtime` para transporte WebRTC local.
 
 ## Dependencias Existentes
 
@@ -186,6 +218,17 @@ Backend diretas:
 - pgx/pgxpool para PostgreSQL.
 - Biblioteca padrao `net/http` para chamadas ao Ollama.
 - Biblioteca padrao `os/exec` para providers locais de voz configuraveis.
+- Biblioteca padrao `net/http` para provider STT HTTP local.
+
+Voice Agent diretas:
+
+- Python 3.11+.
+- Biblioteca padrao para cliente HTTP/SSE e servidor local de smoke test.
+
+Voice Agent opcionais:
+
+- Pipecat para pipeline realtime.
+- LiveKit para transporte WebRTC desktop/mobile.
 
 Frontend diretas:
 
@@ -212,7 +255,8 @@ Infra:
 - Manter handlers sem dependencia direta de provedores externos de IA.
 - Definir contratos para `memory` e `agents` antes da primeira implementacao concreta.
 - Manter novas tools atras do contrato `Tool` e do `ToolRegistry`.
-- Manter providers de voz atras dos contratos `SpeechRecognizer` e `VoiceProvider`.
+- Manter providers de voz batch atras dos contratos `SpeechRecognizer` e `VoiceProvider`.
+- Manter voz realtime isolada no `voice-agent`, chamando o Jarvis Core em vez de executar tools diretamente.
 - Adicionar migrations versionadas para entidades reais e decidir se o carregamento via `/docker-entrypoint-initdb.d` sera suficiente ou se sera adotado um migrator dedicado.
 - Adicionar testes unitarios para config, database health e handlers.
 - Adicionar padrao de erro HTTP antes de ampliar muito a API.
@@ -228,7 +272,7 @@ Infra:
 - O chat com streaming reduz latencia percebida, mas ainda nao persiste historico e nao implementa cancelamento explicito na UI.
 - Tool calling inicial suporta uma chamada de tool por interacao; fluxos multi-step ficam para evolucao futura.
 - STT/TTS dependem de binarios e modelos locais configurados no ambiente.
-- O endpoint de voz ainda usa upload completo de audio; streaming fica para evolucao futura.
-- Wake word ainda nao foi implementada.
+- O endpoint de voz batch ainda usa upload do trecho detectado por VAD; a direcao principal para experiencia natural passa a ser o `voice-agent` realtime.
+- Wake word atual e baseada na transcricao, nao em keyword spotting acustico dedicado.
 - Ainda ha poucos testes automatizados implementados no repositorio.
 - `npm audit --omit=dev` aponta vulnerabilidades moderadas em dependencia transitiva do Next.js/PostCSS na versao observada.

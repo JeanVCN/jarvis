@@ -96,7 +96,7 @@ func (r *CommandSpeechRecognizer) Recognize(ctx context.Context, input AudioInpu
 
 	transcript = strings.TrimSpace(transcript)
 	if transcript == "" {
-		return "", fmt.Errorf("stt returned empty transcript")
+		return "", ErrEmptyTranscript
 	}
 
 	return transcript, nil

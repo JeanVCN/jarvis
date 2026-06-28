@@ -32,9 +32,12 @@ services:
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://127.0.0.1:13000,http://localhost:13000}
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      VOICE_STT_PROVIDER: ${VOICE_STT_PROVIDER:-command}
+      VOICE_STT_URL: ${VOICE_STT_URL:-}
+      VOICE_STT_STATUS_URL: ${VOICE_STT_STATUS_URL:-}
       VOICE_STT_COMMAND: ${VOICE_STT_COMMAND:-faster-whisper}
       VOICE_STT_ARGS: ${VOICE_STT_ARGS:-{input} --language {language} --model {model} --output_format txt --output_dir {output_dir}}
-      VOICE_STT_MODEL: ${VOICE_STT_MODEL:-tiny}
+      VOICE_STT_MODEL: ${VOICE_STT_MODEL:-small}
       VOICE_STT_LANGUAGE: ${VOICE_STT_LANGUAGE:-pt}
       VOICE_TTS_COMMAND: ${VOICE_TTS_COMMAND:-piper}
       VOICE_TTS_ARGS: ${VOICE_TTS_ARGS:---model {voice} --output_file {output}}
@@ -56,10 +59,47 @@ services:
     environment:
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://backend:18080}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:18080}
+      NEXT_PUBLIC_VOICE_AGENT_URL: ${NEXT_PUBLIC_VOICE_AGENT_URL:-http://127.0.0.1:18100}
     ports:
       - "${FRONTEND_PORT:-13000}:13000"
     depends_on:
       - backend
+
+  voice-agent:
+    build:
+      context: ./voice-agent
+      dockerfile: Dockerfile
+    container_name: jarvis-voice-agent
+    restart: unless-stopped
+    environment:
+      JARVIS_CORE_URL: ${JARVIS_CORE_URL:-http://backend:18080}
+      JARVIS_VOICE_AGENT_HOST: ${JARVIS_VOICE_AGENT_HOST:-0.0.0.0}
+      JARVIS_VOICE_AGENT_PORT: ${JARVIS_VOICE_AGENT_PORT:-18100}
+      JARVIS_VOICE_TRANSPORT: ${JARVIS_VOICE_TRANSPORT:-console}
+      JARVIS_VOICE_LANGUAGE: ${JARVIS_VOICE_LANGUAGE:-pt-BR}
+      JARVIS_VOICE_AGENT_CORS_ALLOWED_ORIGIN: ${JARVIS_VOICE_AGENT_CORS_ALLOWED_ORIGIN:-http://127.0.0.1:13000,http://localhost:13000}
+      JARVIS_LIVEKIT_URL: ${JARVIS_LIVEKIT_URL:-ws://127.0.0.1:7880}
+      JARVIS_LIVEKIT_API_KEY: ${JARVIS_LIVEKIT_API_KEY:-devkey}
+      JARVIS_LIVEKIT_API_SECRET: ${JARVIS_LIVEKIT_API_SECRET:-secret}
+      JARVIS_LIVEKIT_ROOM: ${JARVIS_LIVEKIT_ROOM:-jarvis-main}
+      JARVIS_LIVEKIT_AGENT_IDENTITY: ${JARVIS_LIVEKIT_AGENT_IDENTITY:-jarvis-agent}
+      JARVIS_LIVEKIT_ROOM_PREFIX: ${JARVIS_LIVEKIT_ROOM_PREFIX:-jarvis}
+      JARVIS_LIVEKIT_TOKEN_TTL_SECONDS: ${JARVIS_LIVEKIT_TOKEN_TTL_SECONDS:-3600}
+    ports:
+      - "${JARVIS_VOICE_AGENT_PORT:-18100}:18100"
+    depends_on:
+      - backend
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: jarvis-livekit
+    command: ["--dev", "--bind", "0.0.0.0"]
+    profiles:
+      - realtime
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
 
 volumes:
   postgres_data:

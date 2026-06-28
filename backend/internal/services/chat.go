@@ -165,7 +165,7 @@ func detectSystemAction(message string) (string, bool) {
 		return "open_browser", true
 	case strings.Contains(message, "terminal"):
 		return "open_terminal", true
-	case containsAny(message, []string{"spotify", "spotfy", "spotifi", "spotifai", "spoti fi", "spot fire", "spotif"}):
+	case containsAny(message, spotifyAliases()):
 		return "open_spotify", true
 	case containsAny(message, []string{"bloqueia a tela", "bloqueie a tela", "bloquear a tela", "lock screen"}):
 		return "lock_screen", true
@@ -181,7 +181,7 @@ func looksLikeShortSystemCommand(message string) bool {
 	if containsAny(message, []string{"?", "o que", "quem", "qual", "porque", "por que", "quando", "onde"}) {
 		return false
 	}
-	return containsAny(message, []string{
+	aliases := []string{
 		"vscode",
 		"vs code",
 		"visual studio code",
@@ -190,6 +190,13 @@ func looksLikeShortSystemCommand(message string) bool {
 		"chrome",
 		"firefox",
 		"terminal",
+	}
+	aliases = append(aliases, spotifyAliases()...)
+	return containsAny(message, aliases)
+}
+
+func spotifyAliases() []string {
+	return []string{
 		"spotify",
 		"spotfy",
 		"spotifi",
@@ -197,7 +204,12 @@ func looksLikeShortSystemCommand(message string) bool {
 		"spoti fi",
 		"spot fire",
 		"spotif",
-	})
+		"scottiff",
+		"scottif",
+		"escotifi",
+		"escotife",
+		"estotifi",
+	}
 }
 
 func extractCalculatorInput(message string) (string, bool) {

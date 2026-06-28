@@ -56,6 +56,98 @@ func TestVoiceServiceStatus(t *testing.T) {
 	}
 }
 
+func TestVoiceServiceIgnoresWakeRequiredAudioWithoutWakeWord(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{"nao deveria chamar"}}
+	provider := &countingVoiceProvider{}
+	service := NewVoiceService(
+		fakeRecognizer{transcript: "abra o Spotify"},
+		provider,
+		NewChatService(llm, newChatTestToolService(t)),
+	)
+
+	result, err := service.Converse(context.Background(), voice.AudioInput{
+		Data:         []byte("input"),
+		Format:       "audio/webm",
+		WakeRequired: true,
+	})
+	if err != nil {
+		t.Fatalf("Converse returned error: %v", err)
+	}
+	if !result.Ignored {
+		t.Fatal("expected ignored result")
+	}
+	if result.WakeWordDetected {
+		t.Fatal("did not expect wake word")
+	}
+	if len(llm.prompts) != 0 {
+		t.Fatalf("expected no llm calls, got %d", len(llm.prompts))
+	}
+	if provider.calls != 0 {
+		t.Fatalf("expected no tts calls, got %d", provider.calls)
+	}
+}
+
+func TestVoiceServiceIgnoresEmptyTranscriptWhenWakeRequired(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{"nao deveria chamar"}}
+	provider := &countingVoiceProvider{}
+	service := NewVoiceService(
+		emptyTranscriptRecognizer{},
+		provider,
+		NewChatService(llm, newChatTestToolService(t)),
+	)
+
+	result, err := service.Converse(context.Background(), voice.AudioInput{
+		Data:         []byte("input"),
+		Format:       "audio/webm",
+		WakeRequired: true,
+	})
+	if err != nil {
+		t.Fatalf("Converse returned error: %v", err)
+	}
+	if !result.Ignored {
+		t.Fatal("expected ignored result")
+	}
+	if len(llm.prompts) != 0 {
+		t.Fatalf("expected no llm calls, got %d", len(llm.prompts))
+	}
+	if provider.calls != 0 {
+		t.Fatalf("expected no tts calls, got %d", provider.calls)
+	}
+}
+
+func TestVoiceServiceStripsWakeWordBeforeChat(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{"Pronto"}}
+	service := NewVoiceService(
+		fakeRecognizer{transcript: "Jarvis diga ola"},
+		fakeVoiceProvider{audio: []byte("audio")},
+		NewChatService(llm, newChatTestToolService(t)),
+	)
+
+	result, err := service.Converse(context.Background(), voice.AudioInput{
+		Data:         []byte("input"),
+		Format:       "audio/webm",
+		WakeRequired: true,
+	})
+	if err != nil {
+		t.Fatalf("Converse returned error: %v", err)
+	}
+	if result.Ignored {
+		t.Fatal("did not expect ignored result")
+	}
+	if !result.WakeWordDetected {
+		t.Fatal("expected wake word")
+	}
+	if len(llm.prompts) != 1 || llm.prompts[0] != "diga ola" {
+		t.Fatalf("unexpected llm prompts: %#v", llm.prompts)
+	}
+}
+
 type fakeRecognizer struct {
 	transcript string
 }
@@ -70,6 +162,21 @@ type fakeVoiceProvider struct {
 
 func (p fakeVoiceProvider) Synthesize(ctx context.Context, text string) (voice.SpeechOutput, error) {
 	return voice.SpeechOutput{Audio: p.audio, ContentType: "audio/wav"}, nil
+}
+
+type countingVoiceProvider struct {
+	calls int
+}
+
+func (p *countingVoiceProvider) Synthesize(ctx context.Context, text string) (voice.SpeechOutput, error) {
+	p.calls++
+	return voice.SpeechOutput{Audio: []byte("audio"), ContentType: "audio/wav"}, nil
+}
+
+type emptyTranscriptRecognizer struct{}
+
+func (r emptyTranscriptRecognizer) Recognize(ctx context.Context, input voice.AudioInput) (string, error) {
+	return "", voice.ErrEmptyTranscript
 }
 
 type fakeStatusRecognizer struct {

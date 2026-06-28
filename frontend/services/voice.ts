@@ -4,10 +4,12 @@ const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:18080"
 
 export async function sendVoiceConversation(
   audio: Blob,
+  options: { wakeRequired?: boolean } = {},
 ): Promise<VoiceConversationResponse> {
   const payload = new FormData();
   payload.append("audio", audio, "speech.webm");
   payload.append("language", "pt");
+  payload.append("wakeRequired", options.wakeRequired ? "true" : "false");
 
   const response = await fetch(`${publicApiUrl}/api/voice/conversation`, {
     method: "POST",

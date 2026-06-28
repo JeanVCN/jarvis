@@ -58,7 +58,7 @@ Infraestrutura observada:
 
 ## Escolhas Arquiteturais Identificadas
 
-- Monorepo com `backend/` e `frontend/`.
+- Monorepo com `backend/`, `frontend/` e `voice-agent/`.
 - Backend organizado em `cmd/` e `internal/`.
 - `cmd/api` contem o ponto de entrada HTTP.
 - Configuracao do backend centralizada em `internal/config`.
@@ -68,7 +68,7 @@ Infraestrutura observada:
 - `backend/internal/ai` contem o contrato `LLM` e a implementacao inicial `OllamaProvider`.
 - `backend/internal/services` contem o caso de uso inicial de chat por texto, tool calling simples e service de tools.
 - `backend/internal/tools` contem o contrato `Tool`, o `ToolRegistry` e ferramentas iniciais, incluindo `SystemTool`.
-- `backend/internal/voice` contem os contratos `SpeechRecognizer` e `VoiceProvider` e providers locais por comando configuravel.
+- `backend/internal/voice` contem os contratos `SpeechRecognizer` e `VoiceProvider`, provider local por comando configuravel e provider STT HTTP para servidor local persistente.
 - Diretorios `voice`, `memory`, `tools`, `agents` e `repositories` seguem como limites arquiteturais para evolucao futura.
 - Frontend usa App Router do Next.js em `frontend/app`.
 - Frontend separa componentes, services, hooks e types.
@@ -77,6 +77,7 @@ Infraestrutura observada:
 - O frontend usa `POST /api/chat/stream` para renderizar respostas do chat em tempo real via SSE.
 - O frontend possui service de tools para chamar `GET /api/tools` e `POST /api/tools/execute`.
 - O frontend possui interface principal de voz com estados `Idle`, `Listening`, `Thinking` e `Speaking`.
+- A interface de voz usa VAD local no navegador para detectar fala/silencio e pode operar em standby aguardando wake word.
 - A home do frontend deve priorizar um HUD de voz com nucleo central animado; chat e tools devem permanecer secundarios.
 - URLs internas e publicas da API sao separadas por `API_INTERNAL_URL` e `NEXT_PUBLIC_API_URL`.
 
@@ -123,11 +124,15 @@ Backend:
 - Handlers de chat devem chamar services, nao provedores externos diretamente.
 - Tools devem ficar atras da interface `tools.Tool` e ser executadas pelo `ToolRegistry`.
 - A integracao entre LLM e tools ocorre no `ChatService`, sem acoplar Ollama diretamente as ferramentas.
-- Tool calling inicial usa JSON simples no formato `{"tool":"nome","input":"entrada"}`.
+- Tool calling atual usa roteamento local para casos obvios; planejamento por JSON pelo LLM fica como evolucao futura para casos nao obvios.
 - `SystemTool` deve executar apenas acoes pre-cadastradas e nao deve permitir comandos arbitrarios.
 - Providers de voz devem ficar atras de `SpeechRecognizer` e `VoiceProvider`.
-- STT/TTS locais sao configurados por env vars e nao devem acoplar handlers a Faster Whisper, Piper ou outro binario especifico.
+- STT/TTS locais sao configurados por env vars e nao devem acoplar handlers a Faster Whisper, Sherpa-ONNX, Piper ou outro provider especifico.
+- Audio bruto nao deve ser persistido nem logado por padrao; providers locais devem processar em memoria ou arquivos temporarios descartaveis.
 - Streaming de chat usa SSE como caminho inicial; WebSocket fica reservado para fluxos bidirecionais futuros.
+- Voz realtime deve ficar isolada em `voice-agent`, com Pipecat/LiveKit como direcao preferida para conversa natural.
+- O `voice-agent` deve chamar `POST /api/chat/stream` no backend Go; tools, permissoes, memoria e comandos continuam sob autoridade do Jarvis Core.
+- O fluxo batch `POST /api/voice/conversation` permanece como fallback/debug enquanto a experiencia principal migra para transporte realtime.
 
 Frontend:
 

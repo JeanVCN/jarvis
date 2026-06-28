@@ -36,7 +36,7 @@ func main() {
 
 	llm := ai.NewOllamaProvider(cfg.OllamaURL, cfg.OllamaModel)
 	chatService := services.NewChatService(llm, toolService)
-	voiceRecognizer := voice.NewCommandSpeechRecognizer(cfg.VoiceSTTCommand, voice.ParseArgs(cfg.VoiceSTTArgs), cfg.VoiceSTTModel, cfg.VoiceSTTLanguage)
+	voiceRecognizer := newSpeechRecognizer(cfg)
 	voiceProvider := voice.NewCommandVoiceProvider(cfg.VoiceTTSCommand, voice.ParseArgs(cfg.VoiceTTSArgs), cfg.VoiceTTSVoice)
 	voiceService := services.NewVoiceService(voiceRecognizer, voiceProvider, chatService)
 
@@ -71,4 +71,11 @@ func mustRegisterTool(registry *tools.Registry, tool tools.Tool) {
 	if err := registry.Register(tool); err != nil {
 		log.Fatalf("tool registration failed: %v", err)
 	}
+}
+
+func newSpeechRecognizer(cfg config.Config) voice.SpeechRecognizer {
+	if cfg.VoiceSTTProvider == "http" {
+		return voice.NewHTTPSpeechRecognizer(cfg.VoiceSTTURL, cfg.VoiceSTTStatusURL, cfg.VoiceSTTLanguage)
+	}
+	return voice.NewCommandSpeechRecognizer(cfg.VoiceSTTCommand, voice.ParseArgs(cfg.VoiceSTTArgs), cfg.VoiceSTTModel, cfg.VoiceSTTLanguage)
 }

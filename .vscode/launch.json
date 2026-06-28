@@ -16,13 +16,31 @@
         "CORS_ALLOWED_ORIGIN": "http://127.0.0.1:13000,http://localhost:13000",
         "OLLAMA_URL": "http://127.0.0.1:11434",
         "OLLAMA_MODEL": "llama3.2",
+        "VOICE_STT_PROVIDER": "http",
+        "VOICE_STT_URL": "http://127.0.0.1:18081/transcribe",
+        "VOICE_STT_STATUS_URL": "http://127.0.0.1:18081/health",
         "VOICE_STT_COMMAND": "${workspaceFolder}/scripts/jarvis-stt-fast",
         "VOICE_STT_ARGS": "{input} --language {language} --model {model} --output_format txt --output_dir {output_dir}",
-        "VOICE_STT_MODEL": "tiny",
+        "VOICE_STT_MODEL": "small",
         "VOICE_STT_LANGUAGE": "pt",
         "VOICE_TTS_COMMAND": "/home/jean/.local/share/jarvis-voice/bin/piper",
         "VOICE_TTS_ARGS": "-m {voice} -f {output}",
         "VOICE_TTS_VOICE": "/home/jean/.local/share/jarvis-voice/voices/pt/pt_BR/jeff/medium/pt_BR-jeff-medium.onnx"
+      }
+    },
+    {
+      "name": "Jarvis Local STT",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "${workspaceFolder}/scripts/jarvis-stt-server",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "JARVIS_STT_HOST": "127.0.0.1",
+        "JARVIS_STT_PORT": "18081",
+        "JARVIS_STT_MODEL": "small",
+        "JARVIS_STT_LANGUAGE": "pt",
+        "JARVIS_STT_DEVICE": "cpu",
+        "JARVIS_STT_COMPUTE_TYPE": "int8"
       }
     },
     {
@@ -33,7 +51,49 @@
       "cwd": "${workspaceFolder}/frontend",
       "env": {
         "API_INTERNAL_URL": "http://127.0.0.1:18080",
-        "NEXT_PUBLIC_API_URL": "http://127.0.0.1:18080"
+        "NEXT_PUBLIC_API_URL": "http://127.0.0.1:18080",
+        "NEXT_PUBLIC_VOICE_AGENT_URL": "http://127.0.0.1:18100"
+      }
+    },
+    {
+      "name": "Jarvis Voice Agent",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "python -m jarvis_voice_agent.server",
+      "cwd": "${workspaceFolder}/voice-agent",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/voice-agent/src",
+        "JARVIS_CORE_URL": "http://127.0.0.1:18080",
+        "JARVIS_VOICE_AGENT_HOST": "127.0.0.1",
+        "JARVIS_VOICE_AGENT_PORT": "18100",
+        "JARVIS_VOICE_TRANSPORT": "console",
+        "JARVIS_VOICE_LANGUAGE": "pt-BR",
+        "JARVIS_VOICE_AGENT_CORS_ALLOWED_ORIGIN": "http://127.0.0.1:13000,http://localhost:13000",
+        "JARVIS_LIVEKIT_URL": "ws://127.0.0.1:7880",
+        "JARVIS_LIVEKIT_API_KEY": "devkey",
+        "JARVIS_LIVEKIT_API_SECRET": "secret",
+        "JARVIS_LIVEKIT_ROOM": "jarvis-main",
+        "JARVIS_LIVEKIT_AGENT_IDENTITY": "jarvis-agent",
+        "JARVIS_LIVEKIT_ROOM_PREFIX": "jarvis",
+        "JARVIS_LIVEKIT_TOKEN_TTL_SECONDS": "3600"
+      }
+    },
+    {
+      "name": "Jarvis Voice Realtime Agent",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "python -m jarvis_voice_agent.realtime",
+      "cwd": "${workspaceFolder}/voice-agent",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/voice-agent/src",
+        "JARVIS_CORE_URL": "http://127.0.0.1:18080",
+        "JARVIS_LIVEKIT_URL": "ws://127.0.0.1:7880",
+        "JARVIS_LIVEKIT_API_KEY": "devkey",
+        "JARVIS_LIVEKIT_API_SECRET": "secret",
+        "JARVIS_LIVEKIT_ROOM": "jarvis-main",
+        "JARVIS_LIVEKIT_AGENT_IDENTITY": "jarvis-agent",
+        "JARVIS_LIVEKIT_ROOM_PREFIX": "jarvis",
+        "JARVIS_LIVEKIT_TOKEN_TTL_SECONDS": "3600"
       }
     }
   ],
@@ -41,7 +101,19 @@
     {
       "name": "Jarvis Full Stack",
       "configurations": [
+        "Jarvis Local STT",
         "Jarvis Backend",
+        "Jarvis Frontend"
+      ],
+      "preLaunchTask": "dev: prepare",
+      "stopAll": true
+    },
+    {
+      "name": "Jarvis Realtime Voice Stack",
+      "configurations": [
+        "Jarvis Backend",
+        "Jarvis Voice Agent",
+        "Jarvis Voice Realtime Agent",
         "Jarvis Frontend"
       ],
       "preLaunchTask": "dev: prepare",

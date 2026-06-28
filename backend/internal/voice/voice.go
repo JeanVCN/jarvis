@@ -2,10 +2,20 @@ package voice
 
 import "context"
 
+var ErrEmptyTranscript = errEmptyTranscript{}
+
+type errEmptyTranscript struct{}
+
+func (errEmptyTranscript) Error() string {
+	return "stt returned empty transcript"
+}
+
 type AudioInput struct {
-	Data     []byte
-	Format   string
-	Language string
+	Data         []byte
+	Format       string
+	Language     string
+	WakeRequired bool
+	WakeWords    []string
 }
 
 type SpeechOutput struct {
@@ -27,4 +37,5 @@ type ProviderStatus struct {
 	STTCommand   string `json:"sttCommand"`
 	TTSCommand   string `json:"ttsCommand"`
 	Message      string `json:"message"`
+	PrivacyMode  string `json:"privacyMode"`
 }

@@ -91,6 +91,7 @@ func TestChatServiceDetectsSpotifyVoiceCommands(t *testing.T) {
 		"abrir o Spotify",
 		"abre spotfy",
 		"coloque o spotifai",
+		"abra scottiff",
 		"spotify",
 	}
 

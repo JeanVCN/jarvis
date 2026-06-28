@@ -1,0 +1,45 @@
+#!/home/jean/.local/share/jarvis-voice/bin/python
+import argparse
+import os
+from pathlib import Path
+
+import sherpa_onnx
+import soundfile as sf
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("input")
+parser.add_argument("--language", default="pt")
+parser.add_argument("--model", default="")
+parser.add_argument("--output_format", default="txt")
+parser.add_argument("--output_dir", required=True)
+args = parser.parse_args()
+
+encoder = os.environ.get("SHERPA_WHISPER_ENCODER", "")
+decoder = os.environ.get("SHERPA_WHISPER_DECODER", "")
+tokens = os.environ.get("SHERPA_WHISPER_TOKENS", "")
+
+if not encoder or not decoder or not tokens:
+    raise SystemExit(
+        "Configure SHERPA_WHISPER_ENCODER, SHERPA_WHISPER_DECODER e SHERPA_WHISPER_TOKENS"
+    )
+
+recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
+    encoder=encoder,
+    decoder=decoder,
+    tokens=tokens,
+    language=args.language,
+    task="transcribe",
+    num_threads=int(os.environ.get("SHERPA_NUM_THREADS", "2")),
+)
+
+audio, sample_rate = sf.read(args.input, dtype="float32", always_2d=True)
+stream = recognizer.create_stream()
+stream.accept_waveform(sample_rate, audio[:, 0])
+recognizer.decode_stream(stream)
+text = str(stream.result).strip()
+
+output_dir = Path(args.output_dir)
+output_dir.mkdir(parents=True, exist_ok=True)
+(output_dir / "transcript.txt").write_text(text, encoding="utf-8")
+print(text)

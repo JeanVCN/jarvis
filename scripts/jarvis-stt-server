@@ -1,0 +1,121 @@
+#!/home/jean/.local/share/jarvis-voice/bin/python
+import json
+import os
+import traceback
+import tempfile
+from email import policy
+from email.parser import BytesParser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
+
+from faster_whisper import WhisperModel
+
+
+HOST = os.environ.get("JARVIS_STT_HOST", "127.0.0.1")
+PORT = int(os.environ.get("JARVIS_STT_PORT", "18081"))
+MODEL = os.environ.get("JARVIS_STT_MODEL", "small")
+LANGUAGE = os.environ.get("JARVIS_STT_LANGUAGE", "pt")
+DEVICE = os.environ.get("JARVIS_STT_DEVICE", "cpu")
+COMPUTE_TYPE = os.environ.get("JARVIS_STT_COMPUTE_TYPE", "int8")
+BEAM_SIZE = int(os.environ.get("JARVIS_STT_BEAM_SIZE", "5"))
+
+recognizer = WhisperModel(MODEL, device=DEVICE, compute_type=COMPUTE_TYPE)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            if urlparse(self.path).path != "/health":
+                self.send_error(404)
+                return
+            self.write_json({"status": "ok", "model": MODEL})
+        except Exception as error:
+            self.write_error(500, "health_failed", error)
+
+    def do_POST(self):
+        try:
+            self.handle_transcribe()
+        except Exception as error:
+            self.write_error(500, "transcription_failed", error)
+
+    def handle_transcribe(self):
+        if urlparse(self.path).path != "/transcribe":
+            self.send_error(404)
+            return
+
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_body = self.rfile.read(content_length)
+        fields, files = parse_multipart(self.headers.get("Content-Type", ""), raw_body)
+        audio = files.get("audio")
+        if audio is None:
+            self.write_json({"error": "audio_required"}, status=400)
+            return
+
+        language = fields.get("language") or LANGUAGE
+        suffix = Path(audio["filename"] or "speech.webm").suffix or ".webm"
+        temp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+                temp_path = temp_file.name
+                temp_file.write(audio["content"])
+
+            segments, _ = recognizer.transcribe(
+                temp_path,
+                language=language,
+                beam_size=BEAM_SIZE,
+                condition_on_previous_text=False,
+                vad_filter=True,
+            )
+            transcript = "".join(segment.text for segment in segments).strip()
+            self.write_json({"transcript": transcript})
+        finally:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+
+    def write_json(self, payload, status=200):
+        data = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def write_error(self, status, code, error):
+        print(f"{code}: {error}", flush=True)
+        if os.environ.get("JARVIS_STT_DEBUG") == "true":
+            traceback.print_exc()
+        self.write_json({"error": code, "detail": str(error)}, status=status)
+
+    def log_message(self, format, *args):
+        if os.environ.get("JARVIS_STT_LOG_REQUESTS") == "true":
+            super().log_message(format, *args)
+
+
+def parse_multipart(content_type, body):
+    message = BytesParser(policy=policy.default).parsebytes(
+        b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + body
+    )
+    fields = {}
+    files = {}
+    for part in message.iter_parts():
+        disposition = part.get_content_disposition()
+        if disposition != "form-data":
+            continue
+        name = part.get_param("name", header="content-disposition")
+        filename = part.get_filename()
+        content = part.get_payload(decode=True) or b""
+        if filename:
+            files[name] = {"filename": filename, "content": content}
+        else:
+            fields[name] = content.decode("utf-8", errors="ignore")
+    return fields, files
+
+
+if __name__ == "__main__":
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"jarvis local STT server listening on http://{HOST}:{PORT} using model={MODEL}", flush=True)
+    server.serve_forever()

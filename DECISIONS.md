@@ -405,7 +405,7 @@ Impacto:
 
 ### 2026-06-17 - STT Local Otimizado Para Baixa Latencia
 
-Status: aceita.
+Status: substituida parcialmente por servidor STT local persistente.
 
 Contexto:
 
@@ -424,6 +424,32 @@ Impacto:
 - A transcricao de comandos curtos deve responder mais rapido.
 - A precisao pode cair em frases longas ou audio ruidoso.
 - A evolucao recomendada continua sendo um provider STT persistente para manter o modelo carregado entre requisicoes.
+
+### 2026-06-18 - Voz Privada Com VAD Local E STT Persistente
+
+Status: aceita.
+
+Contexto:
+
+- O STT por comando ainda carregava o modelo a cada fala.
+- O modelo `tiny` reduzia latencia, mas degradava muito a precisao em portugues.
+- A experiencia desejada exige detectar fim de fala sem clique e evitar execucao acidental de comandos.
+- O projeto deve preservar privacidade, sem enviar audio para APIs externas.
+
+Decisao:
+
+- Adicionar um provider `HTTPSpeechRecognizer` para falar com servidor STT local persistente.
+- Criar `scripts/jarvis-stt-server`, que carrega Faster Whisper uma vez, escuta apenas em `127.0.0.1` e descarta arquivos temporarios apos transcricao.
+- Usar `small` como modelo STT default no perfil F5 para recuperar precisao.
+- Implementar VAD local no frontend com Web Audio API para detectar inicio/fim de fala.
+- Implementar wake word por transcricao com `wakeRequired=true`; sem wake word, o backend retorna `ignored=true` sem chamar LLM, tools ou TTS.
+
+Impacto:
+
+- O custo de carregar o modelo sai do caminho de cada fala e passa para a subida do servidor STT.
+- A captura deixa de exigir clique para finalizar a fala.
+- O audio continua local e nao e persistido por padrao.
+- A wake word atual ainda depende da transcricao; keyword spotting acustico dedicado com Sherpa-ONNX permanece como evolucao recomendada.
 
 ### 2026-06-17 - Interface Principal Orientada A Voz
 
@@ -470,6 +496,31 @@ Impacto:
 
 - Ao abrir a aplicacao, a primeira impressao passa a ser de assistente de IA, nao de dashboard.
 - O modo texto continua disponivel sem competir com a experiencia de voz.
+
+### 2026-06-28 - Voz Realtime Em Modulo Separado
+
+Status: aceita.
+
+Contexto:
+
+- O fluxo batch de voz melhorou, mas ainda apresentou latencia alta, baixa confiabilidade de reconhecimento e transcricao intermitente.
+- Assistentes de voz usaveis normalmente usam audio continuo, turn detection, STT streaming, LLM streaming, TTS streaming e capacidade de interrupcao.
+- O Jarvis Core ja expoe `POST /api/chat/stream`, que preserva tools e respostas deterministicas por SSE.
+
+Decisao:
+
+- Criar `voice-agent/` como servico Python separado para a camada realtime.
+- Manter o backend Go como Jarvis Core e autoridade para tools, memoria futura, permissoes e comandos locais.
+- Fazer o agente chamar `POST /api/chat/stream` em vez de executar comandos diretamente.
+- Emitir tokens de sessao LiveKit no `voice-agent` para clientes desktop/Android entrarem em salas WebRTC sem expor o segredo para o frontend.
+- Usar Pipecat/LiveKit como direcao preferida para transporte/pipeline realtime.
+- Manter `POST /api/voice/conversation` como fallback batch e caminho de debug.
+
+Impacto:
+
+- A experiencia principal de voz deixa de depender do upload de trecho completo antes de iniciar resposta.
+- Desktop e Android podem compartilhar o mesmo servico local via transporte realtime.
+- A migracao fica reversivel e incremental, sem descartar imediatamente o trabalho de STT/TTS atual.
 
 ## Pendentes de Validacao
 

@@ -63,9 +63,10 @@ func (h *VoiceHandler) Converse(c *gin.Context) {
 	log.Printf("voice conversation received: audio_bytes=%d content_type=%s", len(audio), header.Header.Get("Content-Type"))
 
 	result, err := h.service.Converse(ctx, voice.AudioInput{
-		Data:     audio,
-		Format:   header.Header.Get("Content-Type"),
-		Language: c.PostForm("language"),
+		Data:         audio,
+		Format:       header.Header.Get("Content-Type"),
+		Language:     c.PostForm("language"),
+		WakeRequired: c.PostForm("wakeRequired") == "true",
 	})
 	if err != nil {
 		log.Printf("voice conversation failed after %s: %v", time.Since(start), err)
@@ -83,6 +84,8 @@ func (h *VoiceHandler) Converse(c *gin.Context) {
 		Response:         result.Response,
 		AudioContentType: result.AudioContentType,
 		AudioBase64:      base64.StdEncoding.EncodeToString(result.Audio),
+		Ignored:          result.Ignored,
+		WakeWordDetected: result.WakeWordDetected,
 	})
 }
 
@@ -91,4 +94,6 @@ type voiceConversationResponse struct {
 	Response         string `json:"response"`
 	AudioContentType string `json:"audioContentType"`
 	AudioBase64      string `json:"audioBase64"`
+	Ignored          bool   `json:"ignored"`
+	WakeWordDetected bool   `json:"wakeWordDetected"`
 }

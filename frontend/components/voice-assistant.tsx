@@ -7,19 +7,48 @@ import {
   getVoiceStatus,
   sendVoiceConversation,
 } from "@/services/voice";
+import {
+  connectRealtimeVoiceRoom,
+  createRealtimeVoiceSession,
+} from "@/services/realtime-voice";
+import type {
+  RealtimeVoiceConnection,
+  RealtimeVoiceSession,
+} from "@/types/realtime-voice";
 import type { AssistantState, VoiceStatus } from "@/types/voice";
 
 const barCount = 28;
-const particleCount = 54;
+const particleCount = 150;
+const vadSpeechThreshold = 0.035;
+const vadSilenceMs = 900;
+const vadSpeechStartMs = 240;
+const vadMinSpeechMs = 650;
+const vadMaxSpeechMs = 12000;
 const idleLevels = Array.from({ length: barCount }, (_, index) =>
   0.18 + (index % 5) * 0.035,
 );
-const particles = Array.from({ length: particleCount }, (_, index) => ({
-  angle: (360 / particleCount) * index,
-  radius: 35 + (index % 9) * 3.2,
-  size: 2 + (index % 4) * 0.6,
-  delay: -(index % 12) * 0.18,
-}));
+const particles = Array.from({ length: particleCount }, (_, index) => {
+  const angle = index * 137.508;
+  const wave = Math.sin(index * 1.91) * 5 + Math.cos(index * 0.37) * 4;
+  const radius = 9 + Math.sqrt(index / particleCount) * 39 + wave;
+  const radians = (angle * Math.PI) / 180;
+  const left = 50 + Math.cos(radians) * radius * (0.92 + (index % 7) * 0.015);
+  const top = 50 + Math.sin(radians) * radius * (0.78 + (index % 9) * 0.018);
+  const warm = index % 9 === 0 || index % 19 === 0;
+  const violet = index % 4 === 0 || index % 10 === 0;
+
+  return {
+    left,
+    top,
+    size: 3.2 + (index % 7) * 0.9,
+    driftX: Math.cos(radians * 1.7) * (5 + (index % 5) * 1.4),
+    driftY: Math.sin(radians * 1.3) * (5 + (index % 6) * 1.2),
+    delay: -(index % 30) * 0.13,
+    duration: 4.8 + (index % 9) * 0.5,
+    levelIndex: index % barCount,
+    tint: warm ? "#ff365f" : violet ? "#a536ff" : index % 3 === 0 ? "#2377ff" : "#00d8ff",
+  };
+});
 
 type VoiceAssistantProps = {
   onOpenText: () => void;
@@ -37,6 +66,11 @@ export function VoiceAssistant({
   const [error, setError] = useState("");
   const [isSupported, setIsSupported] = useState<boolean | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [realtimeSession, setRealtimeSession] =
+    useState<RealtimeVoiceSession | null>(null);
+  const [realtimeConnection, setRealtimeConnection] =
+    useState<RealtimeVoiceConnection | null>(null);
+  const [isRealtimeConnecting, setIsRealtimeConnecting] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -44,7 +78,16 @@ export function VoiceAssistant({
   const chunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const vadFrameRef = useRef<number | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const realtimeConnectionRef = useRef<RealtimeVoiceConnection | null>(null);
+  const standbyEnabledRef = useRef(false);
+  const speechDetectedRef = useRef(false);
+  const speechCandidateStartedAtRef = useRef(0);
+  const speechStartedAtRef = useRef(0);
+  const silenceStartedAtRef = useRef(0);
+  const shouldSubmitRecordingRef = useRef(false);
+  const restartingStandbyRef = useRef(false);
 
   async function toggleListening() {
     if (voiceStatus && (!voiceStatus.sttAvailable || !voiceStatus.ttsAvailable)) {
@@ -55,6 +98,9 @@ export function VoiceAssistant({
     }
 
     if (assistantState === "listening") {
+      standbyEnabledRef.current = false;
+      shouldSubmitRecordingRef.current = false;
+      restartingStandbyRef.current = false;
       recorderRef.current?.stop();
       return;
     }
@@ -66,10 +112,54 @@ export function VoiceAssistant({
     await startListening();
   }
 
+  async function prepareRealtimeSession() {
+    if (isRealtimeConnecting) {
+      return;
+    }
+
+    if (realtimeConnection) {
+      await realtimeConnection.disconnect();
+      realtimeConnectionRef.current = null;
+      setRealtimeConnection(null);
+      setRealtimeSession(null);
+      setResponse("Realtime desconectado.");
+      return;
+    }
+
+    setError("");
+    setIsRealtimeConnecting(true);
+    try {
+      const session = await createRealtimeVoiceSession({
+        room: "jarvis-main",
+        identity: "desktop",
+      });
+      const connection = await connectRealtimeVoiceRoom(session);
+      realtimeConnectionRef.current = connection;
+      setRealtimeSession(session);
+      setRealtimeConnection(connection);
+      setResponse(`Realtime conectado em ${connection.roomName}.`);
+      setTranscript("");
+    } catch {
+      setRealtimeSession(null);
+      realtimeConnectionRef.current = null;
+      setRealtimeConnection(null);
+      setError("Nao foi possivel conectar o canal realtime.");
+    } finally {
+      setIsRealtimeConnecting(false);
+    }
+  }
+
   async function startListening() {
     setError("");
     setTranscript("");
     setResponse("");
+    standbyEnabledRef.current = true;
+    restartingStandbyRef.current = false;
+    speechDetectedRef.current = false;
+    speechCandidateStartedAtRef.current = 0;
+    speechStartedAtRef.current = 0;
+    silenceStartedAtRef.current = 0;
+    shouldSubmitRecordingRef.current = true;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -82,19 +172,21 @@ export function VoiceAssistant({
       recorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
+        if (event.data.size === 0) {
+          return;
         }
+        chunksRef.current.push(event.data);
       };
       recorder.onstop = () => {
         void submitRecording();
       };
 
-      recorder.start();
+      recorder.start(250);
       setAssistantState("listening");
       startInputMeter(stream);
     } catch {
       setError("Nao foi possivel acessar o microfone.");
+      standbyEnabledRef.current = false;
       setAssistantState("idle");
       stopTracks();
     }
@@ -102,12 +194,22 @@ export function VoiceAssistant({
 
   async function submitRecording() {
     stopMeter();
+    stopVad();
     stopTracks();
+
+    if (!shouldSubmitRecordingRef.current) {
+      setAssistantState("idle");
+      setLevels(idleLevels);
+      if (restartingStandbyRef.current) {
+        restartingStandbyRef.current = false;
+        restartStandby();
+      }
+      return;
+    }
 
     const audio = new Blob(chunksRef.current, { type: pickMimeType() });
     if (audio.size === 0) {
-      setAssistantState("idle");
-      setError("Nenhum audio foi capturado.");
+      restartStandby();
       return;
     }
 
@@ -115,14 +217,18 @@ export function VoiceAssistant({
     setLevels(idleLevels.map((level) => level + 0.12));
 
     try {
-      const result = await sendVoiceConversation(audio);
+      const result = await sendVoiceConversation(audio, { wakeRequired: true });
       setTranscript(result.transcript);
+      if (result.ignored) {
+        setResponse("");
+        restartStandby();
+        return;
+      }
       setResponse(result.response);
       await playResponse(result.audioBase64, result.audioContentType);
     } catch {
       setError("Nao foi possivel completar a conversa por voz.");
-      setAssistantState("idle");
-      setLevels(idleLevels);
+      restartStandby();
     }
   }
 
@@ -144,6 +250,10 @@ export function VoiceAssistant({
     });
 
     stopMeter();
+    if (standbyEnabledRef.current) {
+      restartStandby();
+      return;
+    }
     setAssistantState("idle");
     setLevels(idleLevels);
   }
@@ -156,6 +266,7 @@ export function VoiceAssistant({
     source.connect(analyser);
     audioContextRef.current = audioContext;
     animateAnalyser(analyser);
+    startVad(analyser);
   }
 
   function startOutputMeter(audio: HTMLAudioElement) {
@@ -196,6 +307,76 @@ export function VoiceAssistant({
     }
   }
 
+  function startVad(analyser: AnalyserNode) {
+    const data = new Uint8Array(analyser.fftSize);
+
+    function frame() {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (const value of data) {
+        const centered = (value - 128) / 128;
+        sum += centered * centered;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const nowMs = performance.now();
+
+      if (rms >= vadSpeechThreshold) {
+        if (!speechDetectedRef.current) {
+          if (speechCandidateStartedAtRef.current === 0) {
+            speechCandidateStartedAtRef.current = nowMs;
+          }
+          if (nowMs - speechCandidateStartedAtRef.current >= vadSpeechStartMs) {
+            speechDetectedRef.current = true;
+            speechStartedAtRef.current = nowMs;
+          }
+        }
+        silenceStartedAtRef.current = 0;
+      } else if (!speechDetectedRef.current) {
+        speechCandidateStartedAtRef.current = 0;
+      } else {
+        if (silenceStartedAtRef.current === 0) {
+          silenceStartedAtRef.current = nowMs;
+        }
+        const speechDuration = nowMs - speechStartedAtRef.current;
+        const silenceDuration = nowMs - silenceStartedAtRef.current;
+        if (
+          speechDuration >= vadMinSpeechMs &&
+          (silenceDuration >= vadSilenceMs || speechDuration >= vadMaxSpeechMs)
+        ) {
+          recorderRef.current?.stop();
+          return;
+        }
+      }
+
+      vadFrameRef.current = window.requestAnimationFrame(frame);
+    }
+
+    frame();
+  }
+
+  function stopVad() {
+    if (vadFrameRef.current) {
+      window.cancelAnimationFrame(vadFrameRef.current);
+      vadFrameRef.current = null;
+    }
+  }
+
+  function restartStandby() {
+    setAssistantState("idle");
+    setLevels(idleLevels);
+    if (!standbyEnabledRef.current) {
+      return;
+    }
+    restartingStandbyRef.current = true;
+    window.setTimeout(() => {
+      if (standbyEnabledRef.current) {
+        void startListening();
+      } else {
+        restartingStandbyRef.current = false;
+      }
+    }, 350);
+  }
+
   function stopTracks() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -226,9 +407,14 @@ export function VoiceAssistant({
   useEffect(() => {
     return () => {
       stopMeter();
+      stopVad();
       stopTracks();
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
+      }
+      if (realtimeConnectionRef.current) {
+        void realtimeConnectionRef.current.disconnect();
+        realtimeConnectionRef.current = null;
       }
     };
   }, []);
@@ -255,59 +441,24 @@ export function VoiceAssistant({
         </div>
       </div>
 
-      <div className="hud-side hud-side-left" aria-hidden="true">
-        <span>Ferramentas</span>
-        <span>Sistema</span>
-        <span>Memoria</span>
-      </div>
-
-      <div className="hud-side hud-side-right" aria-hidden="true">
-        <span className={assistantState === "thinking" ? "is-active" : ""}>
-          Pensando
-        </span>
-        <span className={assistantState === "listening" ? "is-active" : ""}>
-          Ouvindo
-        </span>
-        <span className={assistantState === "speaking" ? "is-active" : ""}>
-          Respondendo
-        </span>
-      </div>
-
       <div className="voice-stage" data-state={assistantState}>
-        <div className="hud-reticle" aria-hidden="true" />
-        <div className="voice-rings" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
-
         <div className="particle-field" aria-hidden="true">
           {particles.map((particle, index) => (
             <span
               key={index}
               style={{
+                left: `${particle.left}%`,
+                top: `${particle.top}%`,
                 width: `${particle.size}px`,
                 height: `${particle.size}px`,
-                transform: `translate(-50%, -50%) rotate(${particle.angle}deg) translateX(${particle.radius * 3}px)`,
+                backgroundColor: particle.tint,
+                opacity: 0.34 + levels[particle.levelIndex] * 0.62,
+                transform: `translate(calc(-50% + ${particle.driftX * levels[particle.levelIndex]}px), calc(-50% + ${particle.driftY * levels[particle.levelIndex]}px)) scale(${0.78 + levels[particle.levelIndex] * 1.35})`,
                 animationDelay: `${particle.delay}s`,
+                animationDuration: `${particle.duration}s`,
               }}
             />
           ))}
-        </div>
-
-        <div className="mesh-core" aria-hidden="true">
-          {levels.map((level, index) => (
-            <span
-              key={index}
-              style={{
-                transform: `rotate(${(360 / barCount) * index}deg) translateY(-50%) scaleY(${0.35 + level * 1.7})`,
-                opacity: 0.25 + level * 0.75,
-              }}
-            />
-          ))}
-          <div className="energy-surface" />
-          <div className="core-void" />
         </div>
 
         {(transcript || response || error) && (
@@ -327,26 +478,43 @@ export function VoiceAssistant({
         </button>
         <button
           type="button"
-          onClick={toggleListening}
-          disabled={
-            isSupported !== true ||
-            assistantState === "thinking" ||
-            assistantState === "speaking"
-          }
-          className="voice-button"
-          aria-label={
-            assistantState === "listening" ? "Finalizar fala" : "Iniciar escuta"
-          }
+          className="hud-pill"
+          onClick={prepareRealtimeSession}
+          disabled={isRealtimeConnecting}
         >
-          <span />
+          {realtimeConnection ? "Sair" : realtimeSession ? "Realtime" : "Conectar"}
         </button>
+        <div className="voice-control-cluster">
+          <button
+            type="button"
+            onClick={toggleListening}
+            disabled={
+              isSupported !== true ||
+              assistantState === "thinking" ||
+              assistantState === "speaking"
+            }
+            className="voice-button"
+            aria-label={
+              assistantState === "listening" ? "Desarmar escuta" : "Armar escuta"
+            }
+          >
+            <span />
+          </button>
+        </div>
         <button type="button" className="hud-pill" onClick={onOpenSystem}>
-          Sistema
+          Configuracoes
         </button>
       </div>
 
       <p className="voice-status">
-        {statusText(assistantState, isSupported, voiceStatus)}
+        {statusText(
+          assistantState,
+          isSupported,
+          voiceStatus,
+          realtimeSession,
+          realtimeConnection,
+          isRealtimeConnecting,
+        )}
       </p>
     </section>
   );
@@ -377,26 +545,38 @@ function statusText(
   state: AssistantState,
   isSupported: boolean | null,
   voiceStatus: VoiceStatus | null,
+  realtimeSession: RealtimeVoiceSession | null,
+  realtimeConnection: RealtimeVoiceConnection | null,
+  isRealtimeConnecting: boolean,
 ) {
+  if (isRealtimeConnecting) {
+    return "Conectando realtime...";
+  }
+  if (realtimeConnection) {
+    return `Realtime conectado: ${realtimeConnection.roomName}`;
+  }
+  if (realtimeSession) {
+    return `Realtime preparado: ${realtimeSession.room}`;
+  }
   if (isSupported === null) {
-    return "Inicializando interface de voz.";
+    return "Inicializando";
   }
   if (isSupported === false) {
-    return "Microfone indisponivel neste navegador.";
+    return "Microfone indisponivel";
   }
   if (voiceStatus && (!voiceStatus.sttAvailable || !voiceStatus.ttsAvailable)) {
-    return `Configure STT/TTS locais para ativar voz. STT: ${voiceStatus.sttCommand || "?"}, TTS: ${voiceStatus.ttsCommand || "?"}.`;
+    return "Voz local indisponivel";
   }
   if (state === "listening") {
-    return "Ouvindo em portugues.";
+    return "Ouvindo...";
   }
   if (state === "thinking") {
-    return "Processando voz, ferramentas e resposta.";
+    return "Processando...";
   }
   if (state === "speaking") {
-    return "Respondendo por voz.";
+    return "Respondendo...";
   }
-  return "Pronto para escutar.";
+  return "Em espera";
 }
 
 function stateText(state: AssistantState) {
