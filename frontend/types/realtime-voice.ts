@@ -16,3 +16,27 @@ export type RealtimeVoiceConnection = {
   identity: string;
   disconnect: () => Promise<void>;
 };
+
+export type RealtimeVoiceEvent =
+  | {
+      type: "transcript";
+      transcript: string;
+      command: string;
+      wakeDetected: boolean;
+    }
+  | {
+      type: "response";
+      transcript: string;
+      command: string;
+      response: string;
+    }
+  | {
+      type: "ignored";
+      reason: string;
+      transcript?: string;
+    }
+  | {
+      type: "error";
+      message: string;
+      detail?: string;
+    };

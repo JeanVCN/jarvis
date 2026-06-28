@@ -82,7 +82,10 @@ Documentacao arquitetural do estado atual do Jarvis.
 - `voice-agent/src/jarvis_voice_agent/server.py`: servidor local minimo para health check e smoke test de chat.
 - `voice-agent/src/jarvis_voice_agent/console.py`: modo console para validar streaming core sem audio.
 - `voice-agent/src/jarvis_voice_agent/livekit.py`: emissor de tokens LiveKit para clientes desktop/Android.
-- `voice-agent/src/jarvis_voice_agent/realtime.py`: participante LiveKit opcional que assina audio da sala para futura transcricao.
+- `voice-agent/src/jarvis_voice_agent/realtime.py`: participante LiveKit opcional que assina audio da sala, segmenta fala e chama STT/Jarvis Core.
+- `voice-agent/src/jarvis_voice_agent/audio_turn.py`: VAD simples por RMS/silencio para formar turnos de fala.
+- `voice-agent/src/jarvis_voice_agent/stt.py`: cliente HTTP multipart para o servidor STT local.
+- `voice-agent/src/jarvis_voice_agent/wake.py`: deteccao de wake word por transcricao.
 
 ## Fluxos Entre Modulos
 
@@ -186,7 +189,7 @@ Os providers de voz usam processamento local configurado por env vars e nao depe
 6. O agente transforma os deltas SSE em texto para TTS streaming.
 7. O audio de resposta volta pelo transporte realtime.
 
-O slice implementado em `voice-agent` valida a conexao com o Jarvis Core sem audio, por console e HTTP local, emite tokens LiveKit para clientes desktop/Android e possui um participante realtime que assina audio da sala. O endpoint batch `POST /api/voice/conversation` permanece como fallback e caminho de debug, nao como arquitetura principal para experiencia natural.
+O slice implementado em `voice-agent` valida a conexao com o Jarvis Core sem audio, por console e HTTP local, emite tokens LiveKit para clientes desktop/Android e possui um participante realtime que assina audio da sala, segmenta turnos, transcreve via STT local e chama o Jarvis Core quando a wake word e detectada. O endpoint batch `POST /api/voice/conversation` permanece como fallback e caminho de debug, nao como arquitetura principal para experiencia natural.
 
 ### Frontend
 

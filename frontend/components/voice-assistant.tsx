@@ -13,6 +13,7 @@ import {
 } from "@/services/realtime-voice";
 import type {
   RealtimeVoiceConnection,
+  RealtimeVoiceEvent,
   RealtimeVoiceSession,
 } from "@/types/realtime-voice";
 import type { AssistantState, VoiceStatus } from "@/types/voice";
@@ -133,7 +134,7 @@ export function VoiceAssistant({
         room: "jarvis-main",
         identity: "desktop",
       });
-      const connection = await connectRealtimeVoiceRoom(session);
+      const connection = await connectRealtimeVoiceRoom(session, handleRealtimeEvent);
       realtimeConnectionRef.current = connection;
       setRealtimeSession(session);
       setRealtimeConnection(connection);
@@ -146,6 +147,33 @@ export function VoiceAssistant({
       setError("Nao foi possivel conectar o canal realtime.");
     } finally {
       setIsRealtimeConnecting(false);
+    }
+  }
+
+  function handleRealtimeEvent(event: RealtimeVoiceEvent) {
+    if (event.type === "transcript") {
+      setTranscript(event.transcript);
+      if (!event.wakeDetected) {
+        setResponse("Aguardando chamada: diga Jarvis antes do comando.");
+      }
+      return;
+    }
+    if (event.type === "ignored") {
+      if (event.transcript) {
+        setTranscript(event.transcript);
+      }
+      setResponse(event.reason === "wake_word_required"
+        ? "Comando ignorado: diga Jarvis antes."
+        : "Audio ignorado.");
+      return;
+    }
+    if (event.type === "response") {
+      setTranscript(event.transcript);
+      setResponse(event.response);
+      return;
+    }
+    if (event.type === "error") {
+      setError(`Realtime falhou: ${event.message}`);
     }
   }
 

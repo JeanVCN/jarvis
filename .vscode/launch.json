@@ -74,15 +74,33 @@
         "JARVIS_LIVEKIT_API_SECRET": "secret",
         "JARVIS_LIVEKIT_ROOM": "jarvis-main",
         "JARVIS_LIVEKIT_AGENT_IDENTITY": "jarvis-agent",
+        "JARVIS_LIVEKIT_CONNECT_TIMEOUT_SECONDS": "10",
+        "JARVIS_LIVEKIT_CONNECT_RETRIES": "12",
+        "JARVIS_LIVEKIT_CONNECT_RETRY_DELAY_SECONDS": "2",
         "JARVIS_LIVEKIT_ROOM_PREFIX": "jarvis",
-        "JARVIS_LIVEKIT_TOKEN_TTL_SECONDS": "3600"
+        "JARVIS_LIVEKIT_TOKEN_TTL_SECONDS": "3600",
+        "JARVIS_REALTIME_STT_URL": "http://127.0.0.1:18081/transcribe",
+        "JARVIS_REALTIME_STT_LANGUAGE": "pt",
+        "JARVIS_REALTIME_WAKE_REQUIRED": "true",
+        "JARVIS_REALTIME_WAKE_WORDS": "jarvis",
+        "JARVIS_REALTIME_VAD_THRESHOLD": "0.025",
+        "JARVIS_REALTIME_SILENCE_MS": "900",
+        "JARVIS_REALTIME_MIN_SPEECH_MS": "650",
+        "JARVIS_REALTIME_MAX_SPEECH_MS": "12000"
       }
+    },
+    {
+      "name": "Jarvis LiveKit",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "docker compose --profile realtime up livekit",
+      "cwd": "${workspaceFolder}"
     },
     {
       "name": "Jarvis Voice Realtime Agent",
       "type": "node-terminal",
       "request": "launch",
-      "command": "python -m jarvis_voice_agent.realtime",
+      "command": ".venv/bin/python -m jarvis_voice_agent.realtime",
       "cwd": "${workspaceFolder}/voice-agent",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/voice-agent/src",
@@ -92,8 +110,19 @@
         "JARVIS_LIVEKIT_API_SECRET": "secret",
         "JARVIS_LIVEKIT_ROOM": "jarvis-main",
         "JARVIS_LIVEKIT_AGENT_IDENTITY": "jarvis-agent",
+        "JARVIS_LIVEKIT_CONNECT_TIMEOUT_SECONDS": "10",
+        "JARVIS_LIVEKIT_CONNECT_RETRIES": "12",
+        "JARVIS_LIVEKIT_CONNECT_RETRY_DELAY_SECONDS": "2",
         "JARVIS_LIVEKIT_ROOM_PREFIX": "jarvis",
-        "JARVIS_LIVEKIT_TOKEN_TTL_SECONDS": "3600"
+        "JARVIS_LIVEKIT_TOKEN_TTL_SECONDS": "3600",
+        "JARVIS_REALTIME_STT_URL": "http://127.0.0.1:18081/transcribe",
+        "JARVIS_REALTIME_STT_LANGUAGE": "pt",
+        "JARVIS_REALTIME_WAKE_REQUIRED": "true",
+        "JARVIS_REALTIME_WAKE_WORDS": "jarvis",
+        "JARVIS_REALTIME_VAD_THRESHOLD": "0.025",
+        "JARVIS_REALTIME_SILENCE_MS": "900",
+        "JARVIS_REALTIME_MIN_SPEECH_MS": "650",
+        "JARVIS_REALTIME_MAX_SPEECH_MS": "12000"
       }
     }
   ],
@@ -111,6 +140,8 @@
     {
       "name": "Jarvis Realtime Voice Stack",
       "configurations": [
+        "Jarvis LiveKit",
+        "Jarvis Local STT",
         "Jarvis Backend",
         "Jarvis Voice Agent",
         "Jarvis Voice Realtime Agent",

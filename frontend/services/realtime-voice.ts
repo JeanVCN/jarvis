@@ -1,7 +1,8 @@
-import { Room } from "livekit-client";
+import { Room, RoomEvent } from "livekit-client";
 
 import type {
   RealtimeVoiceConnection,
+  RealtimeVoiceEvent,
   RealtimeVoiceSession,
   RealtimeVoiceSessionRequest,
 } from "@/types/realtime-voice";
@@ -29,10 +30,21 @@ export async function createRealtimeVoiceSession(
 
 export async function connectRealtimeVoiceRoom(
   session: RealtimeVoiceSession,
+  onVoiceEvent?: (event: RealtimeVoiceEvent) => void,
 ): Promise<RealtimeVoiceConnection> {
   const room = new Room({
     adaptiveStream: true,
     dynacast: true,
+  });
+
+  room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+    if (topic !== "jarvis.voice") {
+      return;
+    }
+    const event = parseRealtimeVoiceEvent(payload);
+    if (event) {
+      onVoiceEvent?.(event);
+    }
   });
 
   await room.connect(session.url, session.token);
@@ -46,4 +58,17 @@ export async function connectRealtimeVoiceRoom(
       room.disconnect();
     },
   };
+}
+
+function parseRealtimeVoiceEvent(payload: Uint8Array): RealtimeVoiceEvent | null {
+  try {
+    const decoded = new TextDecoder().decode(payload);
+    const value = JSON.parse(decoded) as RealtimeVoiceEvent;
+    if (!value || typeof value.type !== "string") {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
 }

@@ -4,7 +4,7 @@
     {
       "label": "compose: stop app",
       "type": "shell",
-      "command": "docker compose stop backend frontend",
+      "command": "docker compose stop backend frontend || true",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -17,13 +17,13 @@
     {
       "label": "postgres: up",
       "type": "shell",
-      "command": "docker compose up -d postgres",
+      "command": "docker compose up -d postgres || { echo 'WARN: Postgres Docker nao iniciou. Se o backend falhar no banco, verifique Docker Desktop/bridge network ou suba um PostgreSQL local em 127.0.0.1:5432.'; exit 0; }",
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": [],
       "presentation": {
-        "reveal": "silent",
+        "reveal": "always",
         "panel": "dedicated"
       }
     },
@@ -40,6 +40,19 @@
       "label": "postgres: down",
       "type": "shell",
       "command": "docker compose stop postgres",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "docker: diagnose",
+      "type": "shell",
+      "command": "docker info && docker compose ps",
       "options": {
         "cwd": "${workspaceFolder}"
       },

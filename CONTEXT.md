@@ -58,7 +58,10 @@ Voice Agent:
 - `voice-agent/src/jarvis_voice_agent/server.py`: health check e smoke test HTTP local.
 - `voice-agent/src/jarvis_voice_agent/console.py`: console para validar streaming sem audio.
 - `voice-agent/src/jarvis_voice_agent/livekit.py`: emissor local de tokens LiveKit.
-- `voice-agent/src/jarvis_voice_agent/realtime.py`: participante LiveKit opcional que entra na sala, assina faixas de audio e contabiliza frames.
+- `voice-agent/src/jarvis_voice_agent/realtime.py`: participante LiveKit opcional que entra na sala, assina faixas de audio, segmenta turnos e aciona STT/Jarvis Core.
+- `voice-agent/src/jarvis_voice_agent/audio_turn.py`: detector simples de turno de fala por RMS/silencio.
+- `voice-agent/src/jarvis_voice_agent/stt.py`: cliente HTTP multipart para o servidor STT local.
+- `voice-agent/src/jarvis_voice_agent/wake.py`: normalizacao e deteccao de wake word por transcricao.
 
 ## Relacionamento Entre Modulos
 
@@ -191,7 +194,7 @@ Implementado:
 - Base `voice-agent` com cliente do Jarvis Core, servidor local e console de smoke test.
 - Endpoint `POST /livekit/session` no `voice-agent` para emitir token de sala LiveKit.
 - HUD principal do frontend consegue criar sessao realtime, entrar na sala LiveKit e publicar o microfone.
-- Participante realtime do `voice-agent` consegue entrar na mesma sala e observar audio assinado; STT dos frames ainda nao foi implementado.
+- Participante realtime do `voice-agent` consegue entrar na mesma sala, segmentar audio, transcrever via STT local e chamar o Jarvis Core apos wake word.
 
 Nao implementado:
 

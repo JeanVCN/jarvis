@@ -271,7 +271,7 @@ Para subir o servidor LiveKit local gratuito em modo de desenvolvimento:
 docker compose --profile realtime up livekit
 ```
 
-Pipecat entra na proxima fatia como pipeline de audio dentro do agente para consumir o audio publicado na sala. Mesmo nesse modelo, tools e comandos continuam no backend Go, nao no agente Python.
+Pipecat ainda pode substituir ou melhorar a pipeline de audio dentro do agente. Mesmo nesse modelo, tools e comandos continuam no backend Go, nao no agente Python.
 
 Para iniciar o participante realtime do Jarvis na sala:
 
@@ -281,7 +281,7 @@ python -m pip install -r requirements-realtime.txt
 JARVIS_LIVEKIT_ROOM=jarvis-main python -m jarvis_voice_agent.realtime
 ```
 
-Nesta fatia, ele entra como `jarvis-agent`, assina faixas de audio e registra frames recebidos. A transcricao desses frames fica para o proximo passo.
+Nesta fatia, ele entra como `jarvis-agent`, assina faixas de audio, segmenta fala por VAD simples, envia o trecho para o STT local e chama o Jarvis Core quando a transcricao contem a wake word configurada.
 
 ## ▶️ Rodando Pelo VS Code
 

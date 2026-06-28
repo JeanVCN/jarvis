@@ -59,6 +59,7 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - `voice-agent` emite tokens de sessao LiveKit para clientes desktop/Android via `POST /livekit/session`.
 - Frontend chama o `voice-agent` por `NEXT_PUBLIC_VOICE_AGENT_URL`, entra na sala LiveKit e publica o microfone a partir do HUD principal.
 - `voice-agent` possui participante realtime que entra na sala LiveKit, assina faixas de audio e contabiliza frames recebidos.
+- `voice-agent` segmenta audio realtime por VAD simples, envia turnos para STT local e chama o Jarvis Core quando a wake word e detectada.
 
 ## Em Andamento
 
@@ -76,7 +77,7 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - `agents`: diretorio existe, mas nao ha agentes autonomos.
 - `ai`: possui interface `LLM` e provider inicial Ollama; ainda nao ha OpenAI ou Gemini.
 - `voice`: possui contratos, provedores locais por comando/HTTP, servidor STT local, endpoint de conversa, VAD no frontend e UI de captura; depende de binarios/modelos locais de STT/TTS instalados no ambiente e fica como fallback batch.
-- `voice-agent`: possui base separada para voz realtime, emissao de token LiveKit, integracao inicial com o HUD e participante que assina audio; ainda nao transcreve frames com STT/Pipecat.
+- `voice-agent`: possui base separada para voz realtime, emissao de token LiveKit, integracao inicial com o HUD e participante que assina audio; ja transcreve turnos via STT HTTP local, mas ainda nao sintetiza audio de resposta de volta para a sala.
 - `services`: possui chat com roteamento local para tools obvias e service de tools; ainda nao ha memoria ou agentes.
 - `repositories`: diretorio existe, mas ainda nao ha repositorios de dominio.
 - `hooks`: diretorio frontend existe, mas ainda nao ha hooks.
@@ -93,8 +94,8 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 8. Definir padrao de observabilidade minimo, como logs estruturados e erros padronizados.
 9. Adicionar configuracao seletiva de provedores de IA quando OpenAI ou Gemini forem implementados.
 10. Evoluir tool calling por LLM para casos nao obvios sem prejudicar o streaming de mensagens normais.
-11. Implementar transporte realtime no `voice-agent` com LiveKit/Pipecat.
-12. Conectar STT/TTS streaming ao `voice-agent` e medir latencia por etapa.
+11. Validar manualmente transporte realtime LiveKit + STT + Jarvis Core em ambiente local com rede Docker funcional.
+12. Conectar TTS/audio de resposta do `voice-agent` de volta para a sala LiveKit e medir latencia por etapa.
 13. Configurar e documentar modelos locais recomendados para Faster Whisper, Sherpa-ONNX, Piper/Kokoro e alternativas.
 14. Evoluir wake word por transcricao para keyword spotting acustico local.
 15. Criar cliente Android/APK apontando para o servico local via transporte realtime.
