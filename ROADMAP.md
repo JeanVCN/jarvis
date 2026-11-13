@@ -138,3 +138,27 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 - Voice batch pode evoluir em paralelo com UI e providers, desde que preserve os contratos `SpeechRecognizer` e `VoiceProvider`.
 - Voice realtime pode evoluir em paralelo no `voice-agent`, desde que o backend Go continue sendo a autoridade para tools, memoria e permissoes.
 - Agents devem aguardar definicao de tools, memory e limites de seguranca.
+
+## Atualização 2026-11-13 — Laboratório de voz contínua
+
+Implementado:
+
+- `/lab` com seleção de STT/TTS/voz/turn detection/provedor, histórico e exportação de eventos.
+- Conversas, turnos, eventos SSE retomáveis e journal de ferramentas no PostgreSQL.
+- Migrações aditivas, recuperação de turnos interrompidos e trava de instância do Core.
+- SmallWebRTC, Silero, Smart Turn v3.2, áudio progressivo e descarte por geração.
+- Adaptadores CPU Whisper base/small, Kokoro PT-BR e Pocket português.
+- Provedores scripted, Groq, Ollama e Codex App Server experimental.
+- Scripts de instalação/execução, corpus, WER, TTS isolado, recursos e smoke tests.
+
+Pendente de evidência externa (não considerar concluído):
+
+- Downloads e inferência dos pesos STT/TTS bloqueados pela rede do executor.
+- Licença individual da voz Pocket, enquadramento OAuth e elegibilidade/cota da conta.
+- Inferência real de ChatGPT/Groq/Ollama e comparação dos modelos reais elegíveis.
+- Áudio no browser físico; Chromium gerenciado bloqueia UDP WebRTC neste executor.
+- Notebook de 8 GB, qualidade PT-BR, metas de latência e interrupção acústica.
+- ICE/Tailscale/Android em Wi-Fi e rede móvel; seleção final dos perfis.
+
+Candidatos de segunda rodada permanecem condicionais, conforme a matriz em
+`docs/voice-lab/README.md`. LiveKit e voz batch não foram removidos.

@@ -147,3 +147,13 @@ Docker:
 - Builds multi-stage para backend e frontend.
 - Usuarios nao-root nos containers finais.
 - `.dockerignore` usado para reduzir contexto de build.
+
+## Direção definida em 2026-11-13
+
+- Uso pessoal entre dispositivos; servidor no notebook Linux i5-1135G7, 8 GB,
+  Iris Xe; Go/PostgreSQL/Next.js ativos em conjunto.
+- Orçamento adicional máximo R$ 0; sem fallback pago ou cobrança automática.
+- Acesso privado pela tailnet. Tailscale Serve cobre HTTPS, não o transporte ICE de mídia.
+- A primeira entrega nova é o laboratório web `/lab`; Android/Linux nativos são posteriores.
+- Modelos finais serão escolhidos por testes no notebook. Estado e limitações em
+  `docs/voice-lab/README.md`; não confundir perfis sintéticos com inferência real.

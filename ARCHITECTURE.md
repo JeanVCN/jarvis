@@ -279,3 +279,28 @@ Infra:
 - Wake word atual e baseada na transcricao, nao em keyword spotting acustico dedicado.
 - Ainda ha poucos testes automatizados implementados no repositorio.
 - `npm audit --omit=dev` aponta vulnerabilidades moderadas em dependencia transitiva do Next.js/PostCSS na versao observada.
+
+## 2026-11-13 — Laboratório de voz contínua
+
+A rota `/lab` testa uma sessão SmallWebRTC privada com o serviço Python
+`jarvis_voice_agent.continuous`. Captura/reprodução e confirmação estimada de
+reprodução ficam no Next.js; STT, VAD, Smart Turn e TTS ficam no Python; contexto,
+IA e ferramentas ficam no Go. O PostgreSQL passa a persistir conversas, turnos,
+eventos ordenados e execuções de ferramentas pela migração aditiva 002.
+
+Os endpoints `/api/v2` coexistem com `/api/chat`, `/api/chat/stream` e o fallback
+batch. A autoridade para histórico e ferramentas é o Core, não o agente Python
+nem o provedor remoto. O novo fluxo só expõe horário e calculadora. O sistema
+operacional fica bloqueado por padrão, inclusive no bootstrap legado.
+
+A sessão usa identidade de turno e geração de áudio para invalidar saída antiga;
+cancelamento reporta descarte local quando não há confirmação externa. Reconexão
+conserva a conversa e cancela operações pendentes, sem reexecutar o turno antigo.
+Somente o par STT/TTS selecionado fica carregado. Perfis, contratos, comandos,
+limitações, licença Pocket pendente e validações de notebook estão descritos em
+`docs/voice-lab/README.md`.
+
+HTTPS/sinalização são servidos na mesma origem via Next.js/Tailscale Serve;
+mídia WebRTC requer ICE/firewall próprios na tailnet. Não há exposição pública
+nem dependência de serviço de mídia pago. Voz e inferência reais ainda dependem
+dos testes de modelos/conta documentados; testes sintéticos não comprovam sua qualidade.

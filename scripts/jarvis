@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Reproducible local voice lab. No account login, billing or tailnet changes are automatic."""
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCAL = ROOT / ".local"
+PY = ROOT / "voice-agent/.venv/bin/python"
+
+
+def command(args, cwd=ROOT, env=None):
+    subprocess.run([str(a) for a in args], cwd=cwd, env=env, check=True)
+
+
+def model_env():
+    env = os.environ.copy()
+    env.setdefault("HF_HOME", str(LOCAL / "huggingface"))
+    env.setdefault("TORCH_HOME", str(LOCAL / "torch"))
+    env.setdefault("PIP_CACHE_DIR", str(LOCAL / "pip-cache"))
+    return env
+
+
+def setup():
+    LOCAL.mkdir(exist_ok=True)
+    if not PY.exists(): command([sys.executable, "-m", "venv", ROOT / "voice-agent/.venv"])
+    command([PY, "-m", "pip", "install", "torch==2.10.0+cpu", "--index-url", "https://download.pytorch.org/whl/cpu"])
+    command([PY, "-m", "pip", "install", "-r", ROOT / "voice-agent/requirements-continuous.txt", "-c", ROOT / "voice-agent/constraints-continuous.txt"])
+    command(["npm", "ci", "--cache", LOCAL / "npm-cache", "--no-audit", "--no-fund"], ROOT / "frontend")
+    command(["npm", "run", "build"], ROOT / "frontend")
+
+
+def go_env():
+    env = model_env()
+    candidate = Path("/workspace/.tools/go/bin")
+    if candidate.exists(): env["PATH"] = str(candidate) + os.pathsep + env["PATH"]
+    env.setdefault("GOCACHE", str(LOCAL / "go-cache"))
+    env.setdefault("GOMODCACHE", str(LOCAL / "go-mod"))
+    env["GOFLAGS"] = "-mod=readonly"
+    return env
+
+
+def run(args):
+    LOCAL.mkdir(exist_ok=True)
+    env = go_env()
+    command(["go", "build", "-p", "2", "-o", LOCAL / "jarvis-api", "./cmd/api"], ROOT / "backend", env)
+    # Readable copies avoid UID/mode problems without changing checkout permissions.
+    migration_dir = LOCAL / "migrations"
+    migration_dir.mkdir(exist_ok=True)
+    migration_dir.chmod(0o755)
+    for source in (ROOT / "backend/migrations").glob("*.sql"):
+        target = migration_dir / source.name
+        shutil.copyfile(source, target)
+        target.chmod(0o644)
+    override = LOCAL / "compose.yml"
+    override.write_text('services:\n  postgres:\n    volumes:\n      - ' + str(migration_dir) + ':/docker-entrypoint-initdb.d:ro\n')
+    command(["docker", "compose", "-f", ROOT / "docker-compose.yml", "-f", override, "up", "-d", "postgres"])
+    for _ in range(60):
+        probe = subprocess.run(["docker", "exec", "jarvis-postgres", "pg_isready", "-U", "jarvis", "-d", "jarvis"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if probe.returncode == 0: break
+        time.sleep(1)
+    else: raise RuntimeError("PostgreSQL did not become ready")
+    backend_port = env.get("BACKEND_PORT", "18080")
+    voice_port = env.get("JARVIS_VOICE_AGENT_PORT", "18100")
+    frontend_port = env.get("FRONTEND_PORT", "13000")
+    env.update({"DATABASE_URL": os.getenv("DATABASE_URL", "postgres://jarvis:jarvis@127.0.0.1:5432/jarvis?sslmode=disable"), "BACKEND_HOST": "127.0.0.1", "JARVIS_VOICE_AGENT_HOST": "127.0.0.1", "PYTHONPATH": str(ROOT / "voice-agent/src"), "API_INTERNAL_URL": f"http://127.0.0.1:{backend_port}", "VOICE_INTERNAL_URL": f"http://127.0.0.1:{voice_port}"})
+    env.setdefault("JARVIS_CORE_URL", f"http://127.0.0.1:{backend_port}")
+    signature = {"core": env["API_INTERNAL_URL"], "voice": env["VOICE_INTERNAL_URL"]}
+    build_config = LOCAL / "frontend-build-env.json"
+    previous = json.loads(build_config.read_text()) if build_config.exists() else None
+    build_id = ROOT / "frontend/.next/BUILD_ID"
+    source_files = []
+    for directory, folders, files in os.walk(ROOT / "frontend"):
+        folders[:] = [name for name in folders if name not in ("node_modules", ".next", ".git")]
+        source_files.extend(Path(directory) / name for name in files)
+    changed = not build_id.exists() or any(path.stat().st_mtime > build_id.stat().st_mtime for path in source_files)
+    if previous != signature or changed:
+        command(["npm", "run", "build"], ROOT / "frontend", env)
+        build_config.write_text(json.dumps(signature))
+    if args.synthetic: env["JARVIS_TEST_AUDIO"] = "true"
+    profiles = {"stt": args.stt, "tts": args.tts, "voice": args.voice or ("rafael" if args.tts == "pocket" else "pf_dora"), "turn": args.turn, "provider": args.llm, "model": args.model}
+    (LOCAL / "profile.json").write_text(json.dumps(profiles, indent=2))
+    procs = []
+    requested = False
+    def stop(*signals):
+        nonlocal requested
+        if signals: requested = True
+        for proc in reversed(procs):
+            try: os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        for cmd, cwd in [([LOCAL / "jarvis-api"], ROOT), ([PY, "-m", "jarvis_voice_agent.continuous"], ROOT), (["npm", "run", "start", "--", "--hostname", "127.0.0.1", "--port", frontend_port], ROOT / "frontend")]:
+            procs.append(subprocess.Popen([str(x) for x in cmd], cwd=cwd, env=env, start_new_session=True))
+        (LOCAL / "pids.json").write_text(json.dumps([p.pid for p in procs]))
+        print("Open /lab on your local HTTPS or loopback origin. Selected profile:", json.dumps(profiles), flush=True)
+        while all(p.poll() is None for p in procs): time.sleep(.5)
+        if not requested: raise RuntimeError("A required service exited; see its output above")
+    finally:
+        stop()
+        for proc in procs:
+            try: proc.wait(timeout=10)
+            except subprocess.TimeoutExpired: os.killpg(proc.pid, signal.SIGKILL); proc.wait()
+
+
+def prepare(args):
+    env = model_env()
+    if args.synthetic: env["JARVIS_TEST_AUDIO"] = "true"
+    env["PYTHONPATH"] = str(ROOT / "voice-agent/src")
+    profile = {"stt": args.stt, "tts": args.tts, "voice": args.voice or ("rafael" if args.tts == "pocket" else "pf_dora"), "turn": args.turn}
+    command([PY, "-c", "import json,sys; from jarvis_voice_agent.engines import Engines,Profile; e=Engines(Profile(**json.loads(sys.argv[1]))); print('Selected models loaded successfully')", json.dumps(profile)], env=env)
+
+
+def doctor(args):
+    for port, path in [(18080,"/health"),(18100,"/health"),(13000,"/lab")]:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}",timeout=10) as response:
+                print(port, response.status)
+        except Exception as error: print(port,type(error).__name__)
+    for name in ("GROQ_API_KEY","JARVIS_GROQ_FREE_CONFIRMED","JARVIS_CODEX_HOME","JARVIS_CODEX_ENABLED"):
+        print(name, "set" if os.environ.get(name) else "unset")
+    command([sys.executable, ROOT / "scripts/voice_bench.py", "--template", ROOT / "results/template.csv"])
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="action",required=True)
+    sub.add_parser("setup")
+    sub.add_parser("doctor")
+    for name in ("run","prepare"):
+        p=sub.add_parser(name)
+        p.add_argument("--stt",choices=["base","small","fixture"],default="base")
+        p.add_argument("--tts",choices=["kokoro","pocket","tone"],default="kokoro")
+        p.add_argument("--voice")
+        p.add_argument("--turn",choices=["silence","smart"],default="silence")
+        p.add_argument("--llm",choices=["scripted","groq","codex","ollama"],default="scripted")
+        p.add_argument("--model",default="")
+        p.add_argument("--synthetic",action="store_true")
+    args=parser.parse_args()
+    {"setup": setup,"run": lambda:run(args),"prepare": lambda:prepare(args),"doctor":lambda:doctor(args)}[args.action]()
+
+if __name__ == "__main__": main()

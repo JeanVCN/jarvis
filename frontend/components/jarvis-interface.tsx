@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { ChatPanel } from "@/components/chat-panel";
@@ -14,6 +15,7 @@ export function JarvisInterface() {
 
   return (
     <main className="jarvis-hud">
+ <Link href="/lab" style={{position:"fixed",bottom:16,left:16,zIndex:30,color:"#67e8f9"}}>Laboratório de voz</Link>
       <VoiceAssistant
         onOpenText={() => setActivePanel("text")}
         onOpenSystem={() => setActivePanel("system")}

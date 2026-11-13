@@ -1,0 +1,9 @@
+[
+ {"id":"short","audio":"short.wav","text":"Jarvis, que horas são?"},
+ {"id":"names","audio":"names.wav","text":"Qual é a previsão para Cianorte na próxima terça-feira?"},
+ {"id":"numbers","audio":"numbers.wav","text":"Anote vinte e cinco reais e cinquenta centavos para o dia treze de novembro de dois mil e vinte e seis."},
+ {"id":"acronyms","audio":"acronyms.wav","text":"Verifique a CPU, a memória RAM e a conexão Wi-Fi."},
+ {"id":"correction","audio":"correction.wav","text":"Agende para amanhã, não, para sexta-feira às quinze e trinta."},
+ {"id":"confirmation","audio":"confirmation.wav","text":"Aham, pode continuar."},
+ {"id":"pause","audio":"pause.wav","text":"Eu queria saber... deixa eu pensar... como funciona o Tailscale?"}
+]

@@ -545,3 +545,13 @@ Pequenos passos, arquitetura limpa, documentacao viva e uma ambicao grande o bas
 Fundacao hoje. Assistente inteligente amanha. 🚀
 
 </div>
+
+## Laboratório de voz contínua (novo)
+
+A rota `/lab` preserva a interface atual e permite comparar Whisper base/small,
+Kokoro/Pocket, silêncio/Smart Turn e motores de texto pelo mesmo fluxo. Instalação,
+perfis, segurança, tailnet, testes e limitações comprovadas estão no
+[guia de voz contínua](docs/voice-lab/README.md).
+
+A execução real de modelos e contas ainda exige as verificações indicadas no guia.
+Não há fallback pago. Não confunda os testes `fixture/tone` com reconhecimento ou síntese reais.

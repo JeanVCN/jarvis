@@ -32,7 +32,6 @@ func TestVoiceHandlerConverse(t *testing.T) {
 		t.Fatalf("writer close returned error: %v", err)
 	}
 
-	gin.SetMode(gin.TestMode)
 	handler := NewVoiceHandler(services.NewVoiceService(
 		handlerFakeRecognizer{},
 		handlerFakeVoiceProvider{},
@@ -61,7 +60,6 @@ func TestVoiceHandlerConverse(t *testing.T) {
 func TestVoiceHandlerStatus(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	handler := NewVoiceHandler(services.NewVoiceService(
 		handlerFakeRecognizer{},
 		handlerFakeVoiceProvider{},

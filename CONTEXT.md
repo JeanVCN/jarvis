@@ -206,3 +206,12 @@ Nao implementado:
 - Agentes.
 - Autenticacao.
 - Acesso remoto.
+
+## Sessões de voz contínua e comparação de perfis
+
+O laboratório `/lab` separa sessão de transporte, conversa persistida e turno.
+Um turno identifica entrada, deltas gerados, ferramentas, áudio enviado e progresso
+estimado de reprodução. Interromper invalida a geração anterior e preserva a captura
+nova; não desfaz ferramentas já executadas. Reconectar conserva conversa, não
+reproduz áudio antigo nem repete automaticamente ações. Provedores de IA e de voz
+são escolhas independentes, e o envio de áudio remoto não faz parte do perfil padrão.

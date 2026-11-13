@@ -24,3 +24,9 @@ __pycache__/
 
 # Docker / local data
 postgres_data/
+
+# Voice lab: credentials, model caches and measurements stay local
+.local/
+results/
+*.egg-info/
+.env.continuous
