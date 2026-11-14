@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-jarvis}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jarvis}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d:ro
@@ -43,7 +43,7 @@ services:
       VOICE_TTS_ARGS: ${VOICE_TTS_ARGS:---model {voice} --output_file {output}}
       VOICE_TTS_VOICE: ${VOICE_TTS_VOICE:-}
     ports:
-      - "${BACKEND_PORT:-18080}:${BACKEND_CONTAINER_PORT:-18080}"
+      - "127.0.0.1:${BACKEND_PORT:-18080}:${BACKEND_CONTAINER_PORT:-18080}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -61,7 +61,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:18080}
       NEXT_PUBLIC_VOICE_AGENT_URL: ${NEXT_PUBLIC_VOICE_AGENT_URL:-http://127.0.0.1:18100}
     ports:
-      - "${FRONTEND_PORT:-13000}:13000"
+      - "127.0.0.1:${FRONTEND_PORT:-13000}:13000"
     depends_on:
       - backend
 
@@ -97,7 +97,7 @@ services:
       JARVIS_REALTIME_MIN_SPEECH_MS: ${JARVIS_REALTIME_MIN_SPEECH_MS:-650}
       JARVIS_REALTIME_MAX_SPEECH_MS: ${JARVIS_REALTIME_MAX_SPEECH_MS:-12000}
     ports:
-      - "${JARVIS_VOICE_AGENT_PORT:-18100}:18100"
+      - "127.0.0.1:${JARVIS_VOICE_AGENT_PORT:-18100}:18100"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

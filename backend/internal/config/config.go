@@ -25,7 +25,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		AppEnv:            getEnv("APP_ENV", "development"),
-		BackendHost:       getEnv("BACKEND_HOST", "0.0.0.0"),
+		BackendHost:       getEnv("BACKEND_HOST", "127.0.0.1"),
 		BackendPort:       getEnv("BACKEND_PORT", "18080"),
 		DatabaseURL:       getEnv("DATABASE_URL", "postgres://jarvis:jarvis@localhost:5432/jarvis?sslmode=disable"),
 		OllamaURL:         getEnv("OLLAMA_URL", "http://127.0.0.1:11434"),

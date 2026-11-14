@@ -53,7 +53,6 @@ func TestToolHandlerExecute(t *testing.T) {
 func newToolTestRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 
-	gin.SetMode(gin.TestMode)
 	service := newToolTestService(t)
 	handler := NewToolHandler(service)
 

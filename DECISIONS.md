@@ -555,3 +555,33 @@ Status: pendente de validacao.
 Hipotese:
 
 - Memoria pode exigir separacao entre historico conversacional, fatos persistentes e configuracoes do usuario.
+
+### 2026-11-13 — Comparação reproduzível de voz antes de selecionar modelos
+
+Status: aceita para a infraestrutura; seleção de modelos pendente de testes no notebook.
+
+Contexto:
+
+- Pipeline batch e IA local não entregaram experiência utilizável.
+- Máquina alvo i5-1135G7/8 GB/Linux, uso individual e orçamento adicional zero.
+- É necessário separar qualidade do modelo de latência de transporte e processamento.
+
+Decisão:
+
+- Preservar fluxos legados e adicionar `/lab`, SmallWebRTC e contratos `/api/v2`.
+- Manter Go/PostgreSQL como autoridade de histórico, contexto e ferramentas.
+- Comparar Whisper base/small INT8, Kokoro e Pocket pelo mesmo caminho de áudio.
+- Usar Silero com silêncio fixo ou Smart Turn v3.2, carregados localmente.
+- Oferecer scripted, Groq Free, Ollama e adaptador experimental Codex App Server;
+  exigir ativação/credenciais e inferência real antes de declarar provedor elegível.
+- Nunca ativar fallback pago; não reutilizar credenciais da tarefa Codex.
+- Bloquear ferramentas de sistema por padrão; não repetir ferramentas após reconexão.
+- Persistir eventos/turnos e distinguir texto gerado de reprodução estimada.
+
+Impacto:
+
+- Migrações são aplicadas também em bancos existentes, com lock e registro de versões.
+- O histórico novo persiste; os endpoints antigos continuam disponíveis.
+- Variantes finais, sotaque PT-BR, licença individual Pocket, cotas e métricas
+  dependem das verificações documentadas, sem promessas baseadas no executor remoto.
+- Preservam-se verificação TLS e políticas de rede/navegador do ambiente.

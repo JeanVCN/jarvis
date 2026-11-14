@@ -1,6 +1,6 @@
 import type { HealthResponse } from "@/types/health";
 
-const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:18080";
+const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
 const serverApiUrl = process.env.API_INTERNAL_URL ?? publicApiUrl;
 
 export async function getHealth(): Promise<HealthResponse & { apiUrl: string }> {

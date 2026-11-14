@@ -1,6 +1,6 @@
 import type { ChatRequest, ChatResponse } from "@/types/chat";
 
-const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:18080";
+const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export async function sendChatMessage(message: string): Promise<ChatResponse> {
   const payload: ChatRequest = { message };
