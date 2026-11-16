@@ -14,6 +14,7 @@ import (
 	"github.com/jean/jarvis/backend/internal/conversation"
 	"github.com/jean/jarvis/backend/internal/database"
 	"github.com/jean/jarvis/backend/internal/handlers"
+	"github.com/jean/jarvis/backend/internal/opencode"
 	"github.com/jean/jarvis/backend/internal/services"
 	"github.com/jean/jarvis/backend/internal/tools"
 	"github.com/jean/jarvis/backend/internal/voice"
@@ -22,6 +23,17 @@ import (
 
 func main() {
 	cfg := config.Load()
+	var opencodeClient *opencode.Client
+	if cfg.OpenCodeBridgeEnabled {
+		if os.Getenv("JARVIS_AUTH_REQUIRED") != "true" || len(os.Getenv("JARVIS_AUTH_PASSWORD")) < 12 || len(os.Getenv("JARVIS_AUTH_SECRET")) < 32 {
+			log.Fatal("OpenCode bridge requires Jarvis authentication with a 12+ character password and 32+ byte secret")
+		}
+		var err error
+		opencodeClient, err = opencode.NewClient(cfg.OpenCodeBridgeURL, cfg.OpenCodeBridgeToken)
+		if err != nil {
+			log.Fatalf("OpenCode bridge configuration invalid: %v", err)
+		}
+	}
 
 	ctx := context.Background()
 	db, err := database.New(ctx, cfg.DatabaseURL)
@@ -57,6 +69,9 @@ func main() {
 	voiceService := services.NewVoiceService(voiceRecognizer, voiceProvider, chatService)
 
 	router := handlers.NewRouter(db, chatService, toolService, voiceService, cfg.CORSAllowedOrigin)
+	if opencodeClient != nil {
+		handlers.RegisterOpenCode(router, opencodeClient)
+	}
 
 	conversation.Register(router, conversation.Store{Pool: db.Pool()}, toolService)
 

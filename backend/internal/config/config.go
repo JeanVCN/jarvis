@@ -1,46 +1,55 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Config struct {
-	AppEnv            string
-	BackendHost       string
-	BackendPort       string
-	DatabaseURL       string
-	OllamaURL         string
-	OllamaModel       string
-	CORSAllowedOrigin string
-	VoiceSTTProvider  string
-	VoiceSTTURL       string
-	VoiceSTTStatusURL string
-	VoiceSTTCommand   string
-	VoiceSTTArgs      string
-	VoiceSTTModel     string
-	VoiceSTTLanguage  string
-	VoiceTTSCommand   string
-	VoiceTTSArgs      string
-	VoiceTTSVoice     string
+	AppEnv                string
+	BackendHost           string
+	BackendPort           string
+	DatabaseURL           string
+	OllamaURL             string
+	OllamaModel           string
+	CORSAllowedOrigin     string
+	OpenCodeBridgeEnabled bool
+	OpenCodeBridgeURL     string
+	OpenCodeBridgeToken   string
+	VoiceSTTProvider      string
+	VoiceSTTURL           string
+	VoiceSTTStatusURL     string
+	VoiceSTTCommand       string
+	VoiceSTTArgs          string
+	VoiceSTTModel         string
+	VoiceSTTLanguage      string
+	VoiceTTSCommand       string
+	VoiceTTSArgs          string
+	VoiceTTSVoice         string
 }
 
 func Load() Config {
 	return Config{
-		AppEnv:            getEnv("APP_ENV", "development"),
-		BackendHost:       getEnv("BACKEND_HOST", "127.0.0.1"),
-		BackendPort:       getEnv("BACKEND_PORT", "18080"),
-		DatabaseURL:       getEnv("DATABASE_URL", "postgres://jarvis:jarvis@localhost:5432/jarvis?sslmode=disable"),
-		OllamaURL:         getEnv("OLLAMA_URL", "http://127.0.0.1:11434"),
-		OllamaModel:       getEnv("OLLAMA_MODEL", "llama3.2"),
-		CORSAllowedOrigin: getEnv("CORS_ALLOWED_ORIGIN", "http://127.0.0.1:13000,http://localhost:13000"),
-		VoiceSTTProvider:  getEnv("VOICE_STT_PROVIDER", "command"),
-		VoiceSTTURL:       getEnv("VOICE_STT_URL", ""),
-		VoiceSTTStatusURL: getEnv("VOICE_STT_STATUS_URL", ""),
-		VoiceSTTCommand:   getEnv("VOICE_STT_COMMAND", "faster-whisper"),
-		VoiceSTTArgs:      getEnv("VOICE_STT_ARGS", "{input} --language {language} --model {model} --output_format txt --output_dir {output_dir}"),
-		VoiceSTTModel:     getEnv("VOICE_STT_MODEL", "small"),
-		VoiceSTTLanguage:  getEnv("VOICE_STT_LANGUAGE", "pt"),
-		VoiceTTSCommand:   getEnv("VOICE_TTS_COMMAND", "piper"),
-		VoiceTTSArgs:      getEnv("VOICE_TTS_ARGS", "--model {voice} --output_file {output}"),
-		VoiceTTSVoice:     getEnv("VOICE_TTS_VOICE", ""),
+		AppEnv:                getEnv("APP_ENV", "development"),
+		BackendHost:           getEnv("BACKEND_HOST", "127.0.0.1"),
+		BackendPort:           getEnv("BACKEND_PORT", "18080"),
+		DatabaseURL:           getEnv("DATABASE_URL", "postgres://jarvis:jarvis@localhost:5432/jarvis?sslmode=disable"),
+		OllamaURL:             getEnv("OLLAMA_URL", "http://127.0.0.1:11434"),
+		OllamaModel:           getEnv("OLLAMA_MODEL", "llama3.2"),
+		CORSAllowedOrigin:     getEnv("CORS_ALLOWED_ORIGIN", "http://127.0.0.1:13000,http://localhost:13000"),
+		OpenCodeBridgeEnabled: strings.EqualFold(getEnv("JARVIS_OPENCODE_BRIDGE_ENABLED", "false"), "true"),
+		OpenCodeBridgeURL:     getEnv("JARVIS_OPENCODE_BRIDGE_URL", "http://127.0.0.1:18110"),
+		OpenCodeBridgeToken:   getEnv("JARVIS_OPENCODE_BRIDGE_TOKEN", ""),
+		VoiceSTTProvider:      getEnv("VOICE_STT_PROVIDER", "command"),
+		VoiceSTTURL:           getEnv("VOICE_STT_URL", ""),
+		VoiceSTTStatusURL:     getEnv("VOICE_STT_STATUS_URL", ""),
+		VoiceSTTCommand:       getEnv("VOICE_STT_COMMAND", "faster-whisper"),
+		VoiceSTTArgs:          getEnv("VOICE_STT_ARGS", "{input} --language {language} --model {model} --output_format txt --output_dir {output_dir}"),
+		VoiceSTTModel:         getEnv("VOICE_STT_MODEL", "small"),
+		VoiceSTTLanguage:      getEnv("VOICE_STT_LANGUAGE", "pt"),
+		VoiceTTSCommand:       getEnv("VOICE_TTS_COMMAND", "piper"),
+		VoiceTTSArgs:          getEnv("VOICE_TTS_ARGS", "--model {voice} --output_file {output}"),
+		VoiceTTSVoice:         getEnv("VOICE_TTS_VOICE", ""),
 	}
 }
 

@@ -8,7 +8,7 @@ import type {
 } from "@/types/realtime-voice";
 
 const publicVoiceAgentUrl =
-  process.env.NEXT_PUBLIC_VOICE_AGENT_URL ?? "http://127.0.0.1:18100";
+  process.env.NEXT_PUBLIC_VOICE_AGENT_URL ?? "/voice";
 
 export async function createRealtimeVoiceSession(
   request: RealtimeVoiceSessionRequest = {},

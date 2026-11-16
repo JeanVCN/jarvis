@@ -29,13 +29,15 @@ O **Jarvis** nasce como um assistente pessoal local, modular e evolutivo.
 
 A ideia e construir, passo a passo, um sistema capaz de conversar por texto e voz, manter memoria persistente, executar ferramentas, coordenar agentes autonomos e rodar com baixo custo operacional em ambiente Linux.
 
-Este projeto ainda esta em desenvolvimento. A fase atual inclui a fundacao tecnica, conversa por texto com Ollama, infraestrutura de ferramentas, roteamento local de tools obvias e uma interface de voz local com VAD.
+Este projeto ainda esta em desenvolvimento. O fluxo principal de laboratório usa
+Next.js `/lab`, agente Python SmallWebRTC, Core Go `/api/v2` e PostgreSQL para
+conversa, eventos e journal. O fluxo batch de voz permanece como fallback; consulte
+`ARCHITECTURE.md` para separar arquitetura vigente de caminhos legados.
 
 ```text
-Voce  ->  Navegador/APK  ->  Voice Agent  ->  Jarvis API  ->  Memoria / IA / Ferramentas
-             |                                  |
-             v                                  v
-       fallback batch                      PostgreSQL
+Navegador /lab -> agente Python (SmallWebRTC) -> Core Go /api/v2 -> PostgreSQL
+       |                                      ↘ provedores / ferramentas autorizadas
+       └── voz batch (fallback)
 ```
 
 ## 🧠 Objetivos de Longo Prazo
@@ -54,7 +56,45 @@ Voce  ->  Navegador/APK  ->  Voice Agent  ->  Jarvis API  ->  Memoria / IA / Fer
 
 ## 🚧 Status Atual
 
-O projeto esta na **Fase 5: Interface de Voz e Conversacao Natural**.
+O projeto dispõe do laboratório de voz `/lab` e conversa persistida `/api/v2`.
+GPT-6-Luna via OAuth isolado concluiu resposta e calculadora reais em 2026-11-14;
+qualidade/latência de voz em dispositivo físico continuam sujeitas a validação.
+
+**Prioridade ativa:** concluir a fundação segura para acesso móvel e implementar
+delegação de tarefas ao OpenCode V2. Hoje o painel `/code` é somente leitura;
+criação de sessões e envio de prompts ainda não existem. A direção e as fases
+C0–C4 estão em
+[`ROADMAP.md`](ROADMAP.md#prioridade-atual--integração-jarvis--opencode). A etapa
+residencial/Home APIs está pausada até o usuário ter Android; o probe compilado e
+seu estado estão registrados em [`docs/home-apis/README.md`](docs/home-apis/README.md).
+
+Já existe um adaptador local OpenCode read-only em `opencode-bridge`. Quando
+habilitado, o Core fornece status/projetos/sessões e a tela `/code` os apresenta.
+Ainda não envia tarefas nem conteúdo das respostas. A autenticação do Jarvis é
+pré-requisito para habilitar comandos remotos.
+
+### Acesso móvel protegido (fundação C0)
+
+O frontend agora oferece login opcional de usuário único e protege páginas e
+requests same-origin quando `JARVIS_AUTH_REQUIRED=true`. Esse controle fica no
+proxy Next: o Core Go não valida cookie de usuário. Mantenha as portas Core e
+bridge em loopback e não as exponha diretamente; o frontend encaminha as chamadas
+same-origin ao Core. Antes de publicar a interface
+por Tailscale Serve, configure `JARVIS_AUTH_PASSWORD` (12+ caracteres) e um
+`JARVIS_AUTH_SECRET` aleatório (32+ bytes); mantenha ambos apenas no ambiente ou
+em arquivo local ignorado pelo Git. Gere o segredo, por exemplo, com:
+
+```sh
+python -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+Configure também `JARVIS_AUTH_COOKIE_SECURE=true`. O cookie de sessão é
+`HttpOnly`, `SameSite=Strict`, expira em 12 horas e a interface permite sair.
+Chamadas do browser usam a mesma origem do Jarvis; não configure URL de API como
+`127.0.0.1` para um cliente móvel. `scripts/jarvis run` valida os segredos quando
+a autenticação é exigida. Não habilite acesso remoto antes de configurar e testar
+o login. O controle de tentativas é local ao processo; não substitui proteção de
+rede/firewall nem gestão de segredos.
 
 Ja existe:
 
@@ -84,7 +124,8 @@ Ja existe:
 Ainda nao existe:
 
 - ❌ Agentes autonomos
-- ❌ Chamadas multiplas de tools em uma mesma interacao
+- ❌ Controle residencial (o fluxo `/api/v2` já suporta rodadas de ferramentas,
+  mas autoriza somente `time` e `calculator`)
 - ❌ Wake word acustica dedicada
 - ❌ Transporte LiveKit/Pipecat com audio realtime conectado
 - ❌ APK Android

@@ -526,11 +526,14 @@ Impacto:
 
 ### Estrategia de Migracoes
 
-Status: pendente de validacao.
+Status: substituida pela decisão de 2026-11-13.
 
 Hipotese:
 
 - A migration via `/docker-entrypoint-initdb.d` pode ser suficiente na fundacao, mas talvez nao baste para evolucao incremental em ambientes existentes.
+
+Resolução: Core aplica migrações versionadas também em bancos existentes, com
+lock e registro de versões; preservar migrações aditivas nas próximas entregas.
 
 ### Contratos Entre Services, Repositories e Providers de IA
 
@@ -585,3 +588,126 @@ Impacto:
 - Variantes finais, sotaque PT-BR, licença individual Pocket, cotas e métricas
   dependem das verificações documentadas, sem promessas baseadas no executor remoto.
 - Preservam-se verificação TLS e políticas de rede/navegador do ambiente.
+
+### 2026-11-15 - Android como ponte candidata para Google Home
+
+Status: planejada; compatibilidade pendente de validacao.
+
+Contexto:
+
+- A lâmpada está no Google Home via NovaDigital Smart, não no Home Assistant.
+- Modelo/protocolo e API do fabricante são desconhecidos; ID virtual do app não
+  é credencial de controle nem `entity_id` do Home Assistant.
+- Usuário dispõe de Android externo e deseja desenvolvimento sem exigir Android
+  Studio. Home APIs exigem componente Android e consentimento, não apenas um
+  endpoint que o backend Go possa chamar com o nome da lâmpada.
+
+Decisao:
+
+- Avaliar primeiro Home APIs oficiais por prova Android mínima, tomando o sample
+  oficial como referência. Build CLI com Gradle Wrapper foi testado e é possível
+  para compilação, mas os artefatos beta Home não foram resolvidos publicamente;
+  requerem download autenticado/hospedagem local segundo a documentação. O Google
+  lista Android Studio 2024.2.1+ como requisito oficial. Não prometer fluxo sem
+  Studio até validar obtenção/configuração do SDK. Não iniciar cliente de voz ou
+  ponte permanente antes de confirmar a lâmpada na API.
+- Verificar requisitos, distribuição/licença do SDK, projeto Google, identidade/
+  assinatura do APK, OAuth e usuários de teste antes de fixar versões/fluxos.
+- Descobrir e identificar em modo somente leitura; usuário confirma associação
+  entre identificador da API e apelido. Se faltar suporte, reavaliar a rota sem
+  reset/repareamento/desvinculação automáticos.
+- Manter orçamento adicional zero; não habilitar cobrança ou fallback pago.
+
+Impacto:
+
+- Fase A0: SDK beta instalado no Maven local e JDK 17 disponível. Sample oficial
+  e probe Android Jarvis read-only compilam por Gradle Wrapper. Package do probe
+  é próprio e registra somente tipos de luz, sem controles. OAuth/projeto e teste
+  físico continuam dependentes do mantenedor. Evidências em
+  `docs/home-apis/README.md`.
+- Fases A0/A1 do roadmap são a porta de viabilidade. O modelo da lâmpada não
+  bloqueia a tentativa de descoberta, mas compatibilidade não está garantida.
+- Conta Google/consentimento e dispositivo físico exigem participação do usuário.
+- TV/TV Box são expansão separada; Home APIs não equivalem a todas as funções
+  do Google Home/Assistant ou a simulação universal de botões em apps.
+
+### 2026-11-15 - Autoridade do Core e atuação residencial restrita
+
+Status: aceita para os limites; protocolo e implementação planejados.
+
+Contexto:
+
+- Hoje `/api/v2` autoriza apenas horário e calculadora. A ponte Android introduz
+  efeitos físicos, disponibilidade adicional e incerteza entre envio e atuação.
+
+Decisao:
+
+- Core mantém políticas, catálogo autorizado e journal; Android mantém sessão
+  Google e executa operações estruturadas. Nenhum token Google vai ao modelo/Core.
+- Aplicar allowlist adicional ao consentimento Google: um dispositivo confirmado,
+  inicialmente ligar/desligar explícitos, sem `toggle`, shell ou destinos livres.
+- Autenticar pareamento/canal e permitir revogação, mesmo em rede local/tailnet;
+  sem portas públicas. Definir protocolo versionado, validade, correlação e
+  deduplicação em A2, antes de implementar a atuação.
+- Distinguir comando aceito de estado observado/falha/resultado incerto. Não
+  repetir comandos antigos ao reconectar nem prometer exatamente uma atuação.
+- Exigir autorização do usuário para testes físicos; esclarecer pedidos ambíguos.
+  Cancelar fala/turno não significa desfazer uma operação já executada.
+- Validar ciclo de vida Android (bloqueio, suspensão, segundo plano, rede e
+  revogação) e informar indisponibilidade; não presumir daemon permanente.
+
+Impacto:
+
+- Ferramenta residencial exige revisar exposição aos provedores e autorização
+  no Core, protegendo também endpoints manuais. Não basta registrar a tool.
+- O MVP Android não substitui o agente Python de voz. A ponte depende do aparelho
+  disponível e pode depender da nuvem Google/fabricante; não garante operação offline.
+- Transporte, serviço em segundo plano, armazenamento do catálogo e eventuais
+  migrações permanecem pendentes, sujeitos aos testes A1/A2.
+
+### 2026-11-15 - Jarvis delega tarefas de código ao OpenCode
+
+Status: direção aceita; autenticação opcional no proxy Next e adaptador read-only
+integrado ao Core/UI (C0–C1 parciais em `ROADMAP.md`); delegação não implementada.
+
+Contexto:
+
+- O usuário quer desenvolver no computador pelo próprio computador ou celular,
+  enviando tarefas ao Jarvis e recebendo retorno do executor sem precisar operar
+  sempre no computador.
+- Jarvis já tem Core Go, frontend Next.js, agente de voz Python e conversas/eventos
+  persistidos; `/api/v2` só autoriza `time` e `calculator`. O frontend tem login
+  single-user opcional, mas o Core não autentica usuário diretamente.
+- OpenCode V2 oferece serviço local, API de sessão/eventos/permissões e cliente
+  TypeScript oficial. Eventos do client são ao vivo, sem replay/reconexão automática.
+
+Decisão:
+
+- Integrar OpenCode V2 como executor inicial de tarefas de programação, em vez de
+  construir um harness completo próprio.
+- Jarvis continua como interface, identidade, orquestrador, associação de projeto
+  e registro da delegação. OpenCode executa no computador que contém os projetos.
+- Implementar primeiro um adaptador local TypeScript com `@opencode/client`, expondo
+  ao Core Go somente operações de projeto/sessão, prompt, status, mensagens/diff,
+  interrupção e pedidos de permissão. Estado atual: somente GET de status,
+  projetos e metadados de sessões implementados; rotas de escrita não existem.
+  O SDK embutido continua alternativa; Compose e topologia remota ainda pendentes.
+- O celular acessa Jarvis pela rede privada e nunca precisa conectar-se
+  diretamente ao serviço OpenCode. Autenticação do Jarvis, lista allowlist de
+  projetos e fronteira local do adaptador são pré-requisitos para delegar.
+- A autenticação atual é aplicada pelo proxy Next, não pelo Core. Até existir
+  auth de usuário no Core, as portas do Core permanecem apenas em loopback e
+  requests do navegador passam pela mesma origem protegida do frontend.
+- Começar com aprovações pontuais e política conservadora; não aceitar paths
+  arbitrários nem automatizar aprovações. Permissões OpenCode não são sandbox:
+  shell tem autoridade do usuário local.
+- Após desconexão, reconciliar estado/mensagens via API antes de repetir tarefa;
+  não prometer entrega exatamente uma vez. Jarvis exibe resultado final e diff
+  somente após confirmar estado da sessão OpenCode.
+- Esta direção não promete controle genérico de GUI/desktop. A trilha residencial
+  Home APIs fica pausada até o usuário ter Android; o probe compilado é somente um
+  checkpoint preservado.
+
+Referências V2: `https://opencode.ai/docs/build/client/`,
+`https://opencode.ai/docs/api/`, `https://opencode.ai/docs/cli/web/`,
+`https://opencode.ai/docs/permissions/` e `https://opencode.ai/docs/policies/`.

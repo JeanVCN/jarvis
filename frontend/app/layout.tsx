@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { AuthControls } from "@/components/auth-controls";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -6,14 +8,18 @@ export const metadata: Metadata = {
   description: "Assistente pessoal Jarvis",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await headers(); // Read auth configuration at request time, not at image build time.
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        {process.env.JARVIS_AUTH_REQUIRED === "true" && <AuthControls />}
+        {children}
+      </body>
     </html>
   );
 }

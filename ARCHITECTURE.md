@@ -2,6 +2,150 @@
 
 Documentacao arquitetural do estado atual do Jarvis.
 
+## Estado de referência — 2026-11-15
+
+O fluxo atual de laboratório usa Next.js `/lab`, Python SmallWebRTC para áudio
+e Go `/api/v2` para conversa, provedores e ferramentas, com histórico, turnos,
+eventos e journal no PostgreSQL. Os fluxos batch e LiveKit abaixo são legados/
+alternativos preservados, não a única arquitetura atual. As descrições antigas
+de ausência de histórico/migrações incrementais não se aplicam a `/api/v2`.
+GPT-6-Luna via Codex teve resposta e calculadora reais validadas em 2026-11-14;
+isso não comprova qualidade/latência da voz em aparelho físico.
+
+### Extensão prioritária: delegação de tarefas de código ao OpenCode
+
+**Iniciada; ainda sem delegação de tarefas.** Existe protótipo local read-only em
+`opencode-bridge`, conectado a rotas GET opt-in do Core e à tela `/code`. Fases
+C0–C4 em `ROADMAP.md`.
+
+```text
+Celular/desktop → UI Jarvis (login no proxy Next, opcional) → Core Go (loopback)
+                                  ↓ bridge bearer interno, loopback
+                           adaptador TypeScript
+                                  ↓ cliente OpenCode V2
+                           serviço OpenCode local → projetos/terminal
+```
+
+- Jarvis é a interface, identidade, orquestrador, registro da delegação e
+  autoridade para escolher projetos permitidos. OpenCode executa tarefas de
+  programação no computador que contém os repositórios. Não é assumido como
+  controlador genérico da interface gráfica do desktop.
+- Direção escolhida: integrar OpenCode V2 em vez de criar agora um harness
+  completo próprio. Implementado: adaptador local TypeScript usando
+  `@opencode/client`, iniciado opcionalmente pelo script host. SDK embutido não
+  foi escolhido; Compose e topologia/proxy de produção ainda não foram validados.
+  Core Go não deve executar shell nem receber credenciais de provedores.
+- Contrato futuro do adaptador: listar projetos/sessões, criar/continuar sessão,
+  ler status/mensagens/diff, interromper e intermediar aprovações. Hoje só estão
+  implementadas consultas de status/projetos/metadados de sessões. Diretórios vêm
+  da allowlist no bridge, nunca de paths livres fornecidos pelo modelo/browser.
+- O navegador do celular deve falar com Jarvis pela rede privada, não diretamente
+  com OpenCode. O frontend agora oferece autenticação opcional single-user por
+  senha e cookie assinado; vem desativada em desenvolvimento e exige segredo de
+  ambiente. Ativação e validação via proxy privado são pré-requisitos para acesso
+  remoto. Tailnet/CORS não substituem autenticação da aplicação.
+- Limite importante: a sessão é validada no `frontend/proxy.ts`; o Core Go não
+  valida cookie Jarvis nem autentica usuário. No fluxo atual, o Core deve ficar
+  inacessível ao cliente remoto e ser alcançado via frontend/rewrite em loopback.
+  Não exponha diretamente a porta do Core, inclusive quando as rotas OpenCode
+  estiverem habilitadas. O bearer entre Core e bridge é autenticação de serviço,
+  não autenticação do usuário.
+- Eventos OpenCode via cliente são ao vivo, sem replay/reconexão automática. Usar
+  eventos para atualização rápida e consultar estado/mensagens/diff persistidos
+  pela API após reconexão. Reconciliar timeout antes de repetir prompt.
+- Mostrar estado final, resposta e diff só após confirmação pela sessão OpenCode.
+  Aprovações começam pontuais; cancelamento não desfaz ações já realizadas.
+- Permissões do agente não isolam o shell: processos executam com autoridade do
+  usuário do computador. O serviço OpenCode não deve ser exposto à internet nem
+  ficar acessível ao telefone fora da fronteira prevista.
+- Referências V2: [SDK](https://opencode.ai/docs/build/sdk/),
+  [client](https://opencode.ai/docs/build/client/), [API](https://opencode.ai/docs/api/),
+  [Web/serviço](https://opencode.ai/docs/cli/web/),
+  [permissões](https://opencode.ai/docs/permissions/),
+  [políticas](https://opencode.ai/docs/policies/).
+- O protótipo atual usa `@opencode/client` 2.2.7, `Service.discover` e versão
+  OpenCode `2.x`; faz bind somente em `127.0.0.1`, exige bearer token interno e
+  lê apenas projetos allowlisted, status e metadados de sessões. Não envia prompts,
+  comandos nem conteúdo de mensagens. Execução opcional por `scripts/jarvis` via
+  `JARVIS_OPENCODE_BRIDGE_ENABLED=true`; configuração em
+  `opencode-bridge/README.md`.
+- Quando habilitado, o Core registra apenas GET `/api/opencode/status`,
+  `/projects` e `/projects/:project/sessions`; no startup exige variáveis de auth
+  Jarvis configuradas, mas não valida cookie/sessão por request. `/code` mostra
+  esses dados sem diretórios locais ou conteúdo de mensagens. O
+  Compose permanece desabilitado para esse recurso; a topologia suportada nesta
+  fase é o script que executa Core/Next/OpenCode no host.
+- O contrato de escrita ainda está bloqueado. `session.prompt` retorna item
+  inbox, não conclusão; falha após envio exige reconciliação, nunca retry cego.
+  Aprovação persistente `always` não fará parte do fluxo inicial. Detalhes e
+  verificações pendentes em `docs/opencode-integration.md`.
+
+### Extensão residencial pausada: app Android e Google Home
+
+**Pausada até o usuário ter Android disponível.** Checkpoint e critérios anteriores
+preservados em `ROADMAP.md` (A0–A5); não iniciar OAuth, discovery ou atuação agora.
+
+```text
+Texto/voz → Jarvis Core (Go) → ToolRegistry + política + journal
+                                      ↕ canal privado autenticado
+                                 App Android
+                                      ↕ consentimento Google
+                                 Google Home APIs → dispositivo
+```
+
+- O app Android fica em `android/home-probe`, MVP de diagnóstico e não reescrita
+  do frontend/agente de voz. Google lista Android Studio 2024.2.1+ e ADB como
+  requisitos oficiais; o Gradle Wrapper CLI compilou o probe com JDK 17 após
+  instalar o SDK beta em Maven local. O probe registra tipos de luz, lê nome/
+  cômodo e não contém comandos. OAuth e validação física pendentes. Detalhes em
+  `docs/home-apis/README.md`.
+- O Core permanece autoridade de permissões e journal. A implementação atual
+  restringe `/api/v2` a `time` e `calculator`; automação exige evolução explícita
+  dessa política e das ferramentas expostas aos provedores, não apenas registro.
+- O Android solicita consentimento pelas Home APIs e mantém a sessão Google
+  no aparelho; o Core não recebe tokens Google. Autorização da casa pelo Google
+  não autoriza todos os dispositivos no Jarvis: há allowlist adicional, limitada
+  inicialmente a uma lâmpada e comandos explícitos on/off.
+- Descoberta produz um catálogo de identificadores opacos, casas/cômodos,
+  nomes e capacidades. O usuário confirma o vínculo com um apelido do Jarvis.
+  Nomes não identificam univocamente nem concedem permissão. Mudança de conta,
+  casa, identificador ou remoção exige revalidação, não associação por nome.
+- A comunicação terá pareamento autenticado, revogação, validade de comandos,
+  correlação/deduplicação e estado de disponibilidade. Rede local/tailnet não
+  substitui autenticação de aplicação. Sem exposição pública ou segredos em logs.
+- Transporte, persistência do catálogo, esquema de mensagens e mecanismo de
+  segundo plano ainda precisam ser definidos/testados em A2. Preferir conexão
+  iniciada pelo app; não assumir que Android permite um daemon permanente.
+- O contrato deverá distinguir comando enviado/aceito de estado observado com
+  instante de leitura, além de falha e resultado incerto. Sem retransmissão cega
+  após timeout ou reconexão, sem promessa de atuação exatamente uma vez.
+- O journal atual não é, sozinho, garantia de deduplicação entre Core, ponte e
+  dispositivo. Se necessário, adicionar migrações/estados sem descartar histórico.
+- Ausência do Android, rede, consentimento ou serviço Google deixa essa rota
+  indisponível; ela não é controle local/offline garantido. Revogar acesso deve
+  impedir novos comandos. Cancelamento de áudio não reverte atuação física.
+
+### Limites e porta de viabilidade
+
+O dispositivo conhecido é “Luz Do Quarto”, vinculado no Google Home pelo serviço
+NovaDigital Smart (nome de origem “luzinha”). Não há Home Assistant instalado
+confirmado, compatibilidade Tuya comprovada ou API NovaDigital validada. Não é
+necessário coletar modelo/MAC/ID virtual para tentar descoberta pelas Home APIs.
+
+A1 deve comprovar leitura e comandos disponíveis sem atuar. Se a lâmpada não
+for exposta/controlável, suspender a ponte completa e discutir outra integração,
+sem reset/desvinculação automática. Tipos e traits na documentação não garantem
+compatibilidade de um aparelho concreto. TV/TV Box e automação de interface de
+apps ficam para análise posterior, não são capacidades presumidas desta ponte.
+
+Referências oficiais a conferir em A0: [início Android](https://developers.home.google.com/apis/android/get-started),
+[permissões](https://developers.home.google.com/apis/android/permissions),
+[app de exemplo](https://developers.home.google.com/apis/android/sample-app/build),
+[tipos suportados](https://developers.home.google.com/apis/android/supported-device-types)
+e [comandos](https://developers.home.google.com/apis/android/device/control).
+
+## Documentação das fases anteriores
+
 ## Estrutura Atual
 
 ```text

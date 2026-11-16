@@ -17,14 +17,15 @@ for line in sys.stdin:
  if method=='account/read': result={'account':{'type':'chatgpt'}}
  if method=='thread/start': result={'thread':{'id':'thread1'}}
  if method=='turn/start': result={'turn':{'id':'turn1'}}
- if 'id' in r: print(json.dumps({'id':r['id'],'result':result}),flush=True)
  if method=='turn/start':
   content='Olá!'
   if 'CASE_TOOL' in str(r): content='{"jarvis_tool":"calculator","input":"25 * 4"}'
   if 'CASE_NATIVE' in str(r):
+   print(json.dumps({'id':99,'method':'command/exec','params':{}}),flush=True)
    print(json.dumps({'method':'item/started','params':{'item':{'type':'commandExecution'}}}),flush=True)
   print(json.dumps({'method':'item/agentMessage/delta','params':{'delta':content}}),flush=True)
   print(json.dumps({'method':'turn/completed','params':{'turn':{'status':'completed'}}}),flush=True)
+ if 'id' in r: print(json.dumps({'id':r['id'],'result':result}),flush=True)
 `
 	if e := os.WriteFile(server, []byte(script), 0600); e != nil {
 		t.Fatal(e)
@@ -61,5 +62,24 @@ func TestCodexQuotaIsExplicit(t *testing.T) {
 	e := codexFailure([]byte(`{"error":{"codexErrorInfo":"usageLimitExceeded","message":"Try later"}}`))
 	if e.Error() != "quota_exhausted" {
 		t.Fatal(e)
+	}
+}
+
+func TestCodexConversationInputKeepsRolesReadable(t *testing.T) {
+	input, err := codexConversationInput([]Message{
+		{Role: "user", Content: "Calcule 25 * 4."},
+		{Role: "assistant", Content: `{"jarvis_tool":"calculator","input":"25 * 4"}`},
+		{Role: "tool", Content: "100"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<user>\nCalcule 25 * 4.", "<assistant>", "<tool>\n100", "Responda à última mensagem"} {
+		if !strings.Contains(input, want) {
+			t.Fatalf("conversation input missing %q: %s", want, input)
+		}
+	}
+	if _, err := codexConversationInput([]Message{{Role: "user", Content: strings.Repeat("x", 64000)}}); err == nil {
+		t.Fatal("expected oversized context to be rejected")
 	}
 }

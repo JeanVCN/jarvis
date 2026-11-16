@@ -11,7 +11,7 @@ Esta entrega adiciona `/lab`, mantendo a home e os endpoints anteriores. A confi
 - Motores: scripted; Groq Free mediante confirmação; Ollama; Codex App Server experimental, mediante ativação e login em diretório isolado.
 - Sem áudio bruto salvo por padrão. Exportações de métricas e corpus podem conter texto pessoal: ficam locais e ignorados pelo Git.
 
-**Ainda não comprovados:** inferência de Kokoro/Pocket/Whisper com pesos reais neste executor; qualidade PT-BR; inferência em conta ChatGPT/Groq; cotas da conta; áudio no navegador físico; Android e mídia pela tailnet; metas de latência/RAM. O Chromium gerenciado do executor impõe `WebRtcIPHandling=disable_non_proxied_udp`; seu teste de mídia não pode ser concluído aqui. A interface foi exercitada separadamente e o transporte foi exercitado por um cliente aiortc com áudio sintético.
+**Ainda não comprovados:** qualidade PT-BR de Kokoro/Pocket/Whisper; cotas da conta ChatGPT; inferência Groq; áudio no navegador físico; Android e mídia pela tailnet; metas de latência/RAM. O Chromium gerenciado do executor impõe `WebRtcIPHandling=disable_non_proxied_udp`; seu teste de mídia não pode ser concluído aqui. A interface foi exercitada separadamente e o transporte foi exercitado por um cliente aiortc com áudio sintético. A integração ChatGPT via Codex App Server teve uma resposta real e uma chamada Jarvis `calculator` concluídas com `gpt-6-luna` em 2026-11-14; são amostras funcionais, não benchmark de latência ou garantia de cota.
 
 Os downloads Hugging Face e as páginas de Sign in with ChatGPT/Groq foram negados pela política de rede do executor (403 do proxy). Nenhuma verificação TLS foi desativada e nenhuma restrição do Chromium foi removida. `fixture`/`tone` são exclusivamente testes de transporte: **não são reconhecimento/síntese reais**.
 
@@ -83,14 +83,14 @@ Só compare um ID se ele estiver no catálogo ativo e passar no teste. A presen�
 
 O adaptador usa o protocolo stdio, sem extrair cookies/tokens e sem chamar a API convencional com chave. A validação de enquadramento do assistente pessoal nas condições de Sign in with ChatGPT permanece necessária: [fluxo oficial](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server), [self-hosted](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms).
 
-Os schemas de `initialize`, `account/read`, `thread/start`, `turn/start` e eventos foram inspecionados no CLI 0.134.0; inferência real não foi executada, pois não há conta do usuário conectada. Não reutilize a autenticação do executor Codex.
+O CLI local isolado foi atualizado para 0.169.0; o catálogo da conta listou `gpt-6-luna` e `gpt-6.1-sol`. Com o perfil OAuth isolado, `gpt-6-luna` respondeu a uma pergunta simples (2,72 s) e concluiu uma chamada real à ferramenta Jarvis `calculator` (25 × 4 = 100; turno total 5,76 s). Amostras únicas, dependentes da rede/serviço, não representam benchmark nem garantem limites da conta. Não reutilize a autenticação do executor Codex ou do OpenCode.
 
 Preparação local opcional:
 
 ```bash
 mkdir -p .local/codex-profile
 chmod 700 .local/codex-profile
-npm install --prefix .local/codex-cli --no-audit --no-fund @openai/codex@0.134.0
+npm install --prefix .local/codex-cli --no-audit --no-fund @openai/codex@0.169.0
 export JARVIS_CODEX_HOME="$(pwd)/.local/codex-profile"
 export JARVIS_CODEX_BIN="$(pwd)/.local/codex-cli/node_modules/.bin/codex"
 CODEX_HOME="$JARVIS_CODEX_HOME" "$JARVIS_CODEX_BIN" login

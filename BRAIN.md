@@ -157,3 +157,52 @@ Docker:
 - A primeira entrega nova é o laboratório web `/lab`; Android/Linux nativos são posteriores.
 - Modelos finais serão escolhidos por testes no notebook. Estado e limitações em
   `docs/voice-lab/README.md`; não confundir perfis sintéticos com inferência real.
+
+## Direção definida em 2026-11-15 — Primeira utilidade residencial
+
+Status atual: **pausada até o usuário ter Android**. Preservar o probe e os
+detalhes abaixo como checkpoint; a prioridade ativa foi substituída pela
+integração Jarvis↔OpenCode registrada ao final deste documento e no `ROADMAP.md`.
+
+- Começar por ligar/desligar uma única lâmpada no Google Home via NovaDigital
+  Smart. Home Assistant não é infraestrutura existente confirmada.
+- Avaliar app Android com Home APIs oficiais; o SDK beta foi obtido e o probe
+  somente leitura compilou via Gradle Wrapper/JDK 17. OAuth e teste físico
+  continuavam pendentes no checkpoint; ver `docs/home-apis/README.md`.
+- Android passa a ter papel de ponte/diagnóstico antes do cliente nativo de voz.
+  Rota condicionada à descoberta real da lâmpada; não presumir compatibilidade.
+- Core permanece autoridade de ferramentas/permissões/journal. Consentimento
+  Google não substitui autorização por dispositivo/ação no Jarvis.
+- Não alterar pareamento nem executar testes físicos sem autorização; preservar
+  credenciais e identificadores domésticos. Não repetir ações após reconexão.
+- TV/TV Box vêm depois; APIs do Google não garantem controle de qualquer app
+  ou botão. Fases, critérios e limites em `ROADMAP.md` e `ARCHITECTURE.md`.
+
+## Direção definida em 2026-11-15 — Programar pelo celular via Jarvis
+
+- Jarvis será a interface/ponto de controle; OpenCode V2 será o executor inicial
+  para tarefas de código no computador que contém os projetos. Não criar agora
+  um harness completo próprio nem assumir controle universal da GUI.
+- O usuário deve poder escolher projeto, iniciar/continuar sessão, acompanhar
+  estado e resposta/diff, interromper e revisar pedidos de aprovação pelo Jarvis.
+- Autenticação single-user opcional foi implementada no frontend (senha de
+  ambiente, cookie assinado, CSRF/origem e logout); segue desativada por padrão.
+  Validar configuração via proxy/Tailscale antes de liberar o uso móvel.
+- Protótipo read-only `opencode-bridge` implementado com `@opencode/client` 2.2.7,
+  bind loopback, token interno e allowlist de projetos. Validação local ao serviço
+  OpenCode 2.2.7 passou; conectado a rotas GET opt-in do Core e tela `/code` para
+  listar status/projetos/sessões sem conteúdo de conversa. Não envia prompts. SDK
+  embutido e topologia final permanecem em avaliação.
+- Eventos OpenCode são live-only; buscar estado/mensagens/diff após reconexão e
+  reconciliar timeout antes de reenviar. Começar com aprovações pontuais; shell
+  executa com privilégios do usuário local e permissões não equivalem a sandbox.
+- Na API V2 2.2.7, `session.prompt` retorna item inbox, não resposta final; as
+  permissões incluem a decisão persistente `always`. Não repetir prompts em
+  timeout nem expor `always` na primeira UI. Contrato/testes:
+  `docs/opencode-integration.md`.
+- Próxima etapa bloqueante: validar autenticação Jarvis pelo acesso privado e
+  validar política de permissões/idempotência; depois implementar persistência,
+  reconciliação e envio sem retry cego. O login é aplicado pelo Next, não pelo
+  Core: manter Core em loopback até existir autenticação própria. Plano:
+  `ROADMAP.md` C0–C4; arquitetura em
+  `ARCHITECTURE.md`; decisão em `DECISIONS.md`.
