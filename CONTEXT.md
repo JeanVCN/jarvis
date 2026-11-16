@@ -11,33 +11,35 @@ critérios estão em `ROADMAP.md`, fases C0–C4.
   controle, delegando tarefas de código ao OpenCode V2 que roda no computador dos
   projetos. Jarvis exibe progresso, resultado/diff e permite continuar sessões.
 - Decisão: integrar OpenCode, não construir agora um harness próprio completo.
-  Existe protótipo read-only local `opencode-bridge` com `@opencode/client` 2.2.7,
-  allowlist, token interno e bind loopback. Core GET opt-in e tela `/code` exibem
-  status, projetos e metadados de sessões; não há prompt/execução. O processo
-  bridge é iniciado pelo script host; Compose não o habilita. Implantação final
-  e proxy privado ainda não foram validados.
+  `opencode-bridge` e tela `/code` agora implementam leitura, criação/continuação
+  de sessão, prompts, respostas/diffs limitados e aprovações `once`/`reject`.
+  Escrita exige `JARVIS_OPENCODE_WRITE_ENABLED=true` no Core e no bridge e fica
+  desligada por padrão. O fluxo usa allowlist, token interno, bind loopback e
+  journal PostgreSQL; Compose não habilita o bridge. Mocks/builds passaram, mas
+  serviço OpenCode real e implantação privada ainda não foram validados.
 - Jarvis já tem Core Go, frontend Next.js, agente de voz Python e `/api/v2` com
   histórico/eventos/journal. A API permite somente `time` e `calculator`; não
   ampliar essa autorização implicitamente para comandos do computador.
-- Core ainda não autentica usuário; o frontend valida login single-user opcional
-  por senha/cookie no proxy Next, desativado por padrão. Core deve continuar
-  loopback e ser acessado via frontend; bridge tem bearer interno próprio. Para
-  celular, faltam configuração/teste via proxy privado. Não expor Core/OpenCode
-  diretamente nem aceitar diretórios arbitrários.
+- Não haverá login Jarvis. O frontend não tem tela/rotas de login e valida a
+  origem das mutações. A fronteira de acesso é a máquina local/Tailscale; Core,
+  bridge e OpenCode devem continuar em loopback, com Tailscale permitindo somente
+  dispositivos autorizados. Regras por dispositivo e proxy privado ainda
+  precisam de validação prática. Não expor Core/OpenCode diretamente nem aceitar
+  diretórios arbitrários. Um futuro app Android exigirá pareamento por instalação
+  e revogação, sem criar conta Jarvis.
 - Eventos OpenCode não têm replay/reconexão automática pelo client; após falha,
   Jarvis deve consultar o estado da sessão antes de atualizar ou repetir pedidos.
   Shell roda com autoridade do usuário local; aprovações não são sandbox.
-- Investigação V2 em `docs/opencode-integration.md`: prompt retorna item inbox,
-  mensagens são paginadas e permissões incluem `always`. Escrita segue desligada
-  até semântica de permissões/idempotência e reconciliação persistida serem
-  verificadas.
+- Contrato e pendências de validação OpenCode V2 estão em
+  `docs/opencode-integration.md`: `session.prompt` retorna item inbox e a
+  semântica do campo `id`, permissões efetivas e reconciliação ainda precisam de
+  confirmação com serviço real. Nunca repetir automaticamente operação incerta.
 - Automação residencial Google Home está pausada até haver Android. Probe
   `android/home-probe` compilado permanece como checkpoint; OAuth e descoberta
   não foram feitos. Evidências em `docs/home-apis/README.md`.
-- Próxima ação é validar o login atrás da rede privada/proxy e testar as
-  semânticas V2 de permissão/idempotência antes de implementar persistência e
-  envio. Atualmente há somente leitura local. Fases em `ROADMAP.md`; arquitetura
-  em `ARCHITECTURE.md`.
+- Próxima ação é configurar/validar acesso privado por dispositivo e qualificar
+  a escrita com OpenCode real em projeto descartável antes de habilitar o flag.
+  Fases e critérios em `ROADMAP.md`; arquitetura em `ARCHITECTURE.md`.
 
 ## Contexto das fases anteriores
 

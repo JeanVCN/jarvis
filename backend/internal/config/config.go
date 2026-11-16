@@ -14,6 +14,7 @@ type Config struct {
 	OllamaModel           string
 	CORSAllowedOrigin     string
 	OpenCodeBridgeEnabled bool
+	OpenCodeWriteEnabled  bool
 	OpenCodeBridgeURL     string
 	OpenCodeBridgeToken   string
 	VoiceSTTProvider      string
@@ -38,6 +39,7 @@ func Load() Config {
 		OllamaModel:           getEnv("OLLAMA_MODEL", "llama3.2"),
 		CORSAllowedOrigin:     getEnv("CORS_ALLOWED_ORIGIN", "http://127.0.0.1:13000,http://localhost:13000"),
 		OpenCodeBridgeEnabled: strings.EqualFold(getEnv("JARVIS_OPENCODE_BRIDGE_ENABLED", "false"), "true"),
+		OpenCodeWriteEnabled:  strings.EqualFold(getEnv("JARVIS_OPENCODE_WRITE_ENABLED", "false"), "true"),
 		OpenCodeBridgeURL:     getEnv("JARVIS_OPENCODE_BRIDGE_URL", "http://127.0.0.1:18110"),
 		OpenCodeBridgeToken:   getEnv("JARVIS_OPENCODE_BRIDGE_TOKEN", ""),
 		VoiceSTTProvider:      getEnv("VOICE_STT_PROVIDER", "command"),

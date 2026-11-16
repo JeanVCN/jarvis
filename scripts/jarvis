@@ -53,12 +53,9 @@ def go_env():
 def run(args):
     LOCAL.mkdir(exist_ok=True)
     env = go_env()
-    if env.get("JARVIS_AUTH_REQUIRED") == "true":
-        if len(env.get("JARVIS_AUTH_PASSWORD", "")) < 12 or len(env.get("JARVIS_AUTH_SECRET", "").encode()) < 32:
-            raise RuntimeError("JARVIS_AUTH_REQUIRED needs JARVIS_AUTH_PASSWORD (12+ chars) and JARVIS_AUTH_SECRET (32+ bytes)")
+    if env.get("JARVIS_OPENCODE_WRITE_ENABLED") == "true" and env.get("JARVIS_OPENCODE_BRIDGE_ENABLED") != "true":
+        raise RuntimeError("OpenCode writes require JARVIS_OPENCODE_BRIDGE_ENABLED=true")
     if env.get("JARVIS_OPENCODE_BRIDGE_ENABLED") == "true":
-        if env.get("JARVIS_AUTH_REQUIRED") != "true":
-            raise RuntimeError("Enable JARVIS_AUTH_REQUIRED before enabling the OpenCode bridge")
         if len(env.get("JARVIS_OPENCODE_BRIDGE_TOKEN", "")) < 32 or not env.get("JARVIS_OPENCODE_PROJECTS", "").strip():
             raise RuntimeError("OpenCode bridge needs a 32+ byte token and an explicit project allowlist")
     command(["go", "build", "-p", "2", "-o", LOCAL / "jarvis-api", "./cmd/api"], ROOT / "backend", env)

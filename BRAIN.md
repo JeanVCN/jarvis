@@ -185,14 +185,18 @@ integração Jarvis↔OpenCode registrada ao final deste documento e no `ROADMAP
   um harness completo próprio nem assumir controle universal da GUI.
 - O usuário deve poder escolher projeto, iniciar/continuar sessão, acompanhar
   estado e resposta/diff, interromper e revisar pedidos de aprovação pelo Jarvis.
-- Autenticação single-user opcional foi implementada no frontend (senha de
-  ambiente, cookie assinado, CSRF/origem e logout); segue desativada por padrão.
-  Validar configuração via proxy/Tailscale antes de liberar o uso móvel.
-- Protótipo read-only `opencode-bridge` implementado com `@opencode/client` 2.2.7,
-  bind loopback, token interno e allowlist de projetos. Validação local ao serviço
-  OpenCode 2.2.7 passou; conectado a rotas GET opt-in do Core e tela `/code` para
-  listar status/projetos/sessões sem conteúdo de conversa. Não envia prompts. SDK
-  embutido e topologia final permanecem em avaliação.
+  A primeira implementação cobre sessão, prompt, consulta/reconciliação básica e
+  decisões `once`/`reject`; eventos ao vivo e interrupção ainda faltam.
+- O Jarvis não terá login. O acesso remoto será pela tailnet com regras por
+  dispositivo; configuração e teste de acesso permitido/negado ainda pendentes.
+  O frontend valida origem de mutações, mas Core/bridge/OpenCode precisam ficar
+  inacessíveis diretamente ao cliente remoto.
+- `opencode-bridge` usa `@opencode/client` 2.2.7, bind loopback, token interno e
+  allowlist. Criação de sessão/prompt e permissões requerem
+  `JARVIS_OPENCODE_WRITE_ENABLED=true` no Core e bridge; permanece false por
+  padrão. Operações ficam registradas no PostgreSQL antes da chamada externa.
+  Build/testes com mocks passaram; serviço real, contrato de idempotência e
+  topologia final ainda precisam de validação em projeto descartável.
 - Eventos OpenCode são live-only; buscar estado/mensagens/diff após reconexão e
   reconciliar timeout antes de reenviar. Começar com aprovações pontuais; shell
   executa com privilégios do usuário local e permissões não equivalem a sandbox.
@@ -200,9 +204,7 @@ integração Jarvis↔OpenCode registrada ao final deste documento e no `ROADMAP
   permissões incluem a decisão persistente `always`. Não repetir prompts em
   timeout nem expor `always` na primeira UI. Contrato/testes:
   `docs/opencode-integration.md`.
-- Próxima etapa bloqueante: validar autenticação Jarvis pelo acesso privado e
-  validar política de permissões/idempotência; depois implementar persistência,
-  reconciliação e envio sem retry cego. O login é aplicado pelo Next, não pelo
-  Core: manter Core em loopback até existir autenticação própria. Plano:
-  `ROADMAP.md` C0–C4; arquitetura em
+- Próxima etapa bloqueante: configurar acesso Tailscale por dispositivo e
+  qualificar permissões, prompt e reconciliação no OpenCode real antes de ativar
+  escrita. Plano em `ROADMAP.md` C0–C4; arquitetura em
   `ARCHITECTURE.md`; decisão em `DECISIONS.md`.

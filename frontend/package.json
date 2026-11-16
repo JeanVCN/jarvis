@@ -6,7 +6,8 @@
     "dev": "next dev -H 0.0.0.0 -p 13000",
     "build": "next build --webpack",
     "start": "next start -H 0.0.0.0 -p 13000",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test lib/*.test.ts"
   },
   "dependencies": {
     "livekit-client": "^2.20.0",

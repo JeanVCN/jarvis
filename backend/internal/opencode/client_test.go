@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -69,5 +70,58 @@ func TestSessionsRejectsInvalidProjectIDsBeforeRequest(t *testing.T) {
 		if _, err := client.Sessions(context.Background(), id); err == nil {
 			t.Fatalf("expected invalid project ID rejection for %q", id)
 		}
+	}
+}
+
+func TestClientPostsOnlyBoundedProjectAndOperationInputs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+testToken {
+			t.Fatalf("missing bridge bearer token")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		body := map[string]string{}
+		if r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+		}
+		switch r.URL.Path {
+		case "/v1/projects/jarvis/sessions":
+			if r.Method != http.MethodPost || body["operation_id"] != "0123456789abcdef0123456789abcdef" {
+				t.Fatalf("unexpected create request: %s %#v", r.Method, body)
+			}
+			_, _ = w.Write([]byte(`{"id":"ses_created","title":"Jarvis","updated_at":42}`))
+		case "/v1/projects/jarvis/sessions/ses_created/prompts":
+			if r.Method != http.MethodPost || body["text"] != "safe task" {
+				t.Fatalf("unexpected prompt request: %s %#v", r.Method, body)
+			}
+			_, _ = w.Write([]byte(`{"inbox_id":"msg_1"}`))
+		case "/v1/projects/jarvis/operations/0123456789abcdef0123456789abcdef":
+			_, _ = w.Write([]byte(`{"session":{"id":"ses_created","title":"Jarvis","updated_at":42}}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	created, err := client.CreateSession(ctx, "jarvis", "0123456789abcdef0123456789abcdef")
+	if err != nil || created.ID != "ses_created" {
+		t.Fatalf("create = %#v, err=%v", created, err)
+	}
+	accepted, err := client.Prompt(ctx, "jarvis", created.ID, "0123456789abcdef0123456789abcdef", "safe task")
+	if err != nil || accepted.InboxID != "msg_1" {
+		t.Fatalf("prompt = %#v, err=%v", accepted, err)
+	}
+	found, err := client.FindCreatedSession(ctx, "jarvis", "0123456789abcdef0123456789abcdef")
+	if err != nil || found == nil || found.ID != created.ID {
+		t.Fatalf("reconcile = %#v, err=%v", found, err)
+	}
+	if _, err := client.Prompt(ctx, "jarvis", created.ID, "../bad", "safe task"); err == nil {
+		t.Fatal("expected invalid operation id rejection")
 	}
 }

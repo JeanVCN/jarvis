@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +18,9 @@ import (
 var projectIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 type Status struct {
-	Status  string `json:"status"`
-	Version string `json:"version,omitempty"`
+	Status       string `json:"status"`
+	Version      string `json:"version,omitempty"`
+	WriteEnabled bool   `json:"write_enabled,omitempty"`
 }
 
 type Project struct {
@@ -31,6 +33,49 @@ type Session struct {
 	Title     string  `json:"title"`
 	UpdatedAt int64   `json:"updated_at"`
 	Outcome   *string `json:"outcome"`
+}
+
+type SessionCreated struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	UpdatedAt int64   `json:"updated_at"`
+	Outcome   *string `json:"outcome"`
+}
+
+type PromptAccepted struct {
+	InboxID string `json:"inbox_id"`
+}
+
+type Message struct {
+	ID        string `json:"id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt int64  `json:"created_at"`
+	Completed bool   `json:"completed"`
+	Finish    string `json:"finish,omitempty"`
+}
+
+type DiffFile struct {
+	File      string `json:"file"`
+	Patch     string `json:"patch"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Status    string `json:"status"`
+}
+
+type Permission struct {
+	ID        string   `json:"id"`
+	Action    string   `json:"action"`
+	Resources []string `json:"resources"`
+	Message   string   `json:"message,omitempty"`
+}
+
+type SessionDetail struct {
+	Session     Session      `json:"session"`
+	State       string       `json:"state"`
+	Messages    []Message    `json:"messages"`
+	Diff        []DiffFile   `json:"diff"`
+	Permissions []Permission `json:"permissions"`
 }
 
 type Client struct {
@@ -103,15 +148,98 @@ func (c *Client) Sessions(ctx context.Context, projectID string) ([]Session, err
 	return result.Sessions, nil
 }
 
+func (c *Client) CreateSession(ctx context.Context, projectID, operationID string) (SessionCreated, error) {
+	var result SessionCreated
+	if !projectIDPattern.MatchString(projectID) || !validOperationID(operationID) {
+		return result, errors.New("opencode_request_invalid")
+	}
+	body := map[string]string{"operation_id": operationID}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions"
+	err := c.post(ctx, path, body, &result)
+	return result, err
+}
+
+func (c *Client) FindCreatedSession(ctx context.Context, projectID, operationID string) (*SessionCreated, error) {
+	if !projectIDPattern.MatchString(projectID) || !validOperationID(operationID) {
+		return nil, errors.New("opencode_request_invalid")
+	}
+	var result struct {
+		Session *SessionCreated `json:"session"`
+	}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/operations/" + url.PathEscape(operationID)
+	if err := c.get(ctx, path, &result); err != nil {
+		return nil, err
+	}
+	return result.Session, nil
+}
+
+func (c *Client) Prompt(ctx context.Context, projectID, sessionID, operationID, text string) (PromptAccepted, error) {
+	var result PromptAccepted
+	if !projectIDPattern.MatchString(projectID) || !validOperationID(operationID) || sessionID == "" {
+		return result, errors.New("opencode_request_invalid")
+	}
+	body := map[string]string{"operation_id": operationID, "text": text}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/prompts"
+	err := c.post(ctx, path, body, &result)
+	return result, err
+}
+
+func (c *Client) ReplyPermission(ctx context.Context, projectID, sessionID, requestID, operationID, decision string) error {
+	if !projectIDPattern.MatchString(projectID) || sessionID == "" || requestID == "" || !validOperationID(operationID) || (decision != "once" && decision != "reject") {
+		return errors.New("opencode_request_invalid")
+	}
+	body := map[string]string{"operation_id": operationID, "decision": decision}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/permissions/" + url.PathEscape(requestID) + "/reply"
+	var result map[string]any
+	return c.post(ctx, path, body, &result)
+}
+
+func (c *Client) Session(ctx context.Context, projectID, sessionID string) (SessionDetail, error) {
+	var result SessionDetail
+	if !projectIDPattern.MatchString(projectID) || sessionID == "" {
+		return result, errors.New("opencode_request_invalid")
+	}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID)
+	err := c.get(ctx, path, &result)
+	return result, err
+}
+
+func validOperationID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil && strings.ToLower(value) == value
+}
+
 func (c *Client) get(ctx context.Context, path string, target any) error {
+	return c.request(ctx, http.MethodGet, path, nil, target)
+}
+
+func (c *Client) post(ctx context.Context, path string, body any, target any) error {
+	return c.request(ctx, http.MethodPost, path, body, target)
+}
+
+func (c *Client) request(ctx context.Context, method, path string, body, target any) error {
 	u := *c.baseURL
 	u.Path += path
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	var requestBody io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return errors.New("opencode_bridge_request_invalid")
+		}
+		requestBody = strings.NewReader(string(encoded))
+	}
+	request, err := http.NewRequestWithContext(ctx, method, u.String(), requestBody)
 	if err != nil {
 		return errors.New("opencode_bridge_request_invalid")
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
 	request.Header.Set("Accept", "application/json")
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	response, err := c.http.Do(request)
 	if err != nil {
 		return errors.New("opencode_bridge_unavailable")

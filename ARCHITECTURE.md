@@ -14,39 +14,41 @@ isso não comprova qualidade/latência da voz em aparelho físico.
 
 ### Extensão prioritária: delegação de tarefas de código ao OpenCode
 
-**Iniciada; ainda sem delegação de tarefas.** Existe protótipo local read-only em
-`opencode-bridge`, conectado a rotas GET opt-in do Core e à tela `/code`. Fases
-C0–C4 em `ROADMAP.md`.
+**Primeira implementação concluída; qualificação real pendente.** `opencode-bridge`,
+Core e `/code` implementam leitura e escrita guardada por flag. Fases C0–C4 em
+`ROADMAP.md`.
 
 ```text
-Celular/desktop → UI Jarvis (login no proxy Next, opcional) → Core Go (loopback)
+Celular/desktop → UI Jarvis (Tailscale/rede privada) → Core Go (loopback)
                                   ↓ bridge bearer interno, loopback
                            adaptador TypeScript
                                   ↓ cliente OpenCode V2
                            serviço OpenCode local → projetos/terminal
 ```
 
-- Jarvis é a interface, identidade, orquestrador, registro da delegação e
+- Jarvis é a interface, orquestrador, registro da delegação e
   autoridade para escolher projetos permitidos. OpenCode executa tarefas de
   programação no computador que contém os repositórios. Não é assumido como
   controlador genérico da interface gráfica do desktop.
 - Direção escolhida: integrar OpenCode V2 em vez de criar agora um harness
-  completo próprio. Implementado: adaptador local TypeScript usando
-  `@opencode/client`, iniciado opcionalmente pelo script host. SDK embutido não
-  foi escolhido; Compose e topologia/proxy de produção ainda não foram validados.
-  Core Go não deve executar shell nem receber credenciais de provedores.
-- Contrato futuro do adaptador: listar projetos/sessões, criar/continuar sessão,
-  ler status/mensagens/diff, interromper e intermediar aprovações. Hoje só estão
-  implementadas consultas de status/projetos/metadados de sessões. Diretórios vêm
-  da allowlist no bridge, nunca de paths livres fornecidos pelo modelo/browser.
-- O navegador do celular deve falar com Jarvis pela rede privada, não diretamente
-  com OpenCode. O frontend agora oferece autenticação opcional single-user por
-  senha e cookie assinado; vem desativada em desenvolvimento e exige segredo de
-  ambiente. Ativação e validação via proxy privado são pré-requisitos para acesso
-  remoto. Tailnet/CORS não substituem autenticação da aplicação.
-- Limite importante: a sessão é validada no `frontend/proxy.ts`; o Core Go não
-  valida cookie Jarvis nem autentica usuário. No fluxo atual, o Core deve ficar
-  inacessível ao cliente remoto e ser alcançado via frontend/rewrite em loopback.
+-  completo próprio. Implementado: adaptador local TypeScript usando
+  `@opencode/client`, iniciado opcionalmente pelo script host. Criar sessão,
+  enviar prompt, acompanhar por consulta, ler resposta/diff e responder `once`/
+  `reject` estão atrás de `JARVIS_OPENCODE_WRITE_ENABLED`, desligado por padrão.
+  SDK embutido não foi escolhido; Compose e topologia/proxy ainda não foram
+  validados. Core Go não deve executar shell nem receber credenciais de provedores.
+- Contrato atual do adaptador: listar projetos/sessões, criar/continuar sessão,
+  ler status/mensagens/diff e intermediar aprovações pontuais. Interrupção e
+  eventos ao vivo permanecem pendentes. Diretórios vêm da allowlist no bridge,
+  nunca de paths livres fornecidos pelo modelo/browser.
+- O app não terá login Jarvis. O navegador acessa pela máquina local ou rede
+  privada, com Tailscale configurado para permitir somente dispositivos
+  escolhidos. Essa regra ainda precisa de teste prático. O frontend valida origem
+  em mutações, mas Core não autentica usuário; mantenha frontend como única entrada
+  remota e Core/rewrite/bridge/OpenCode em loopback.
+- A primeira implementação tem testes de contrato com mocks, não execução real.
+  Antes de ativar escrita, validar semântica de permissões, ID/correlação do
+  prompt, reconciliação e reinício contra OpenCode 2.2.7 em projeto descartável.
   Não exponha diretamente a porta do Core, inclusive quando as rotas OpenCode
   estiverem habilitadas. O bearer entre Core e bridge é autenticação de serviço,
   não autenticação do usuário.
