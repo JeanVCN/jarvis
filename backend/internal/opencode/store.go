@@ -152,6 +152,53 @@ func (s Store) StartPermission(ctx context.Context, operationID, sessionID, requ
 	return op, true, tx.Commit(ctx)
 }
 
+func (s Store) StartInterrupt(ctx context.Context, operationID, sessionID string) (Operation, bool, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return Operation{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	if op, err := scanOperation(tx.QueryRow(ctx, `SELECT id,project_id,session_id,kind,input,state,external_id,error_code
+		FROM opencode_operations WHERE id=$1`, operationID)); err == nil {
+		if op.Kind != "interrupt" || op.SessionID != sessionID {
+			return Operation{}, false, ErrConflict
+		}
+		return op, false, tx.Commit(ctx)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return Operation{}, false, err
+	}
+	var projectID, sessionState string
+	err = tx.QueryRow(ctx, `SELECT project_id,state FROM opencode_sessions WHERE id=$1 FOR UPDATE`, sessionID).
+		Scan(&projectID, &sessionState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Operation{}, false, ErrSessionNotFound
+	}
+	if err != nil {
+		return Operation{}, false, err
+	}
+	if sessionState != "ready" {
+		return Operation{}, false, ErrSessionUnavailable
+	}
+	var interruptPending bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM opencode_operations
+		WHERE session_id=$1 AND kind='interrupt' AND state IN ('submitting','accepted','running','uncertain'))`, sessionID).Scan(&interruptPending); err != nil {
+		return Operation{}, false, err
+	}
+	if interruptPending {
+		return Operation{}, false, ErrSessionUnavailable
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO opencode_operations(id,project_id,session_id,kind,input,state)
+		VALUES($1,$2,$3,'interrupt','interrupt','submitting')`, operationID, projectID, sessionID); err != nil {
+		return Operation{}, false, err
+	}
+	op, err := scanOperation(tx.QueryRow(ctx, `SELECT id,project_id,session_id,kind,input,state,external_id,error_code
+		FROM opencode_operations WHERE id=$1`, operationID))
+	if err != nil {
+		return Operation{}, false, err
+	}
+	return op, true, tx.Commit(ctx)
+}
+
 func (s Store) MarkUncertain(ctx context.Context, operationID string) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE opencode_operations SET state='uncertain',error_code='opencode_result_uncertain',updated_at=now()
 		WHERE id=$1 AND state='submitting'`, operationID)
@@ -191,6 +238,12 @@ func (s Store) AcceptPrompt(ctx context.Context, operationID, inboxID string) er
 func (s Store) AcceptPermission(ctx context.Context, operationID string) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE opencode_operations SET state='completed',error_code=NULL,updated_at=now()
 		WHERE id=$1 AND kind='permission' AND state='submitting'`, operationID)
+	return err
+}
+
+func (s Store) AcceptInterrupt(ctx context.Context, operationID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE opencode_operations SET state='accepted',error_code=NULL,updated_at=now()
+		WHERE id=$1 AND kind='interrupt' AND state='submitting'`, operationID)
 	return err
 }
 

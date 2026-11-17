@@ -25,8 +25,9 @@ abaixo.
   resposta/diff e aprovações `once`/`reject`. Core e bridge exigem o flag de escrita;
   ambos ficam desligados por padrão. Testes automatizados cobrem contratos com
   mocks, não comportamento real do OpenCode.
-- Continuação é por polling. Stream de eventos e interrupção explícita ainda não
-  existem; não impedem uma prova controlada, mas são trabalho posterior.
+- Continuação é por polling. A interrupção explícita agora existe na UI/Core/bridge
+  com journal e reconciliação por estado da sessão; falta validá-la no OpenCode
+  real. Stream de eventos permanece posterior.
 
 ### Gate para declarar “programar à distância” utilizável
 

@@ -70,7 +70,8 @@ seu estado estão registrados em [`docs/home-apis/README.md`](docs/home-apis/REA
 
 Já existe um adaptador local OpenCode em `opencode-bridge`. O modo read-only lista
 status/projetos/sessões. O modo de escrita cria sessões, envia prompts, recupera
-respostas/diffs e aceita decisões `once`/`reject`; ele exige uma opção explícita
+respostas/diffs, aceita decisões `once`/`reject` e solicita interrupção de tarefa;
+ele exige uma opção explícita
 no servidor e registra operações no PostgreSQL antes de chamar o executor. O app
 não tem conta ou login Jarvis; o acesso remoto é limitado à tailnet.
 O fluxo de escrita ainda é experimental: foi exercitado com mocks, mas aguarda

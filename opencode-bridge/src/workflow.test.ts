@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { OpenCodeClient } from "@opencode/client";
 import type { AllowedProject } from "./projects.js";
-import { createProjectSession, readProjectSession, safeDiffPath, sendProjectPrompt, validOperationID } from "./workflow.js";
+import { createProjectSession, interruptProjectSession, readProjectSession, safeDiffPath, sendProjectPrompt, validOperationID } from "./workflow.js";
 
 const operationID = "0123456789abcdef0123456789abcdef";
 
@@ -60,6 +60,30 @@ test("prompt rejects a session outside its allowlisted project before sending", 
       /session_not_in_project/,
     );
     assert.equal(sent, false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("interrupt validates project ownership and only requests interruption while busy", async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "jarvis-project-"));
+  let interrupted = false;
+  const client = {
+    session: {
+      get: async () => ({ location: { directory }, time: { busy: true } }),
+      interrupt: async () => { interrupted = true; },
+    },
+  } as unknown as OpenCodeClient;
+  try {
+    await interruptProjectSession(client, project(directory), "ses_running");
+    assert.equal(interrupted, true);
+    const foreign = {
+      session: {
+        get: async () => ({ location: { directory: os.tmpdir() }, time: { busy: true } }),
+        interrupt: async () => { throw new Error("must_not_interrupt"); },
+      },
+    } as unknown as OpenCodeClient;
+    await assert.rejects(interruptProjectSession(foreign, project(directory), "ses_foreign"), /session_not_in_project/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

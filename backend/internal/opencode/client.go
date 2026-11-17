@@ -194,6 +194,16 @@ func (c *Client) ReplyPermission(ctx context.Context, projectID, sessionID, requ
 	return c.post(ctx, path, body, &result)
 }
 
+func (c *Client) Interrupt(ctx context.Context, projectID, sessionID, operationID string) error {
+	if !projectIDPattern.MatchString(projectID) || sessionID == "" || !validOperationID(operationID) {
+		return errors.New("opencode_request_invalid")
+	}
+	body := map[string]string{"operation_id": operationID}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/interrupt"
+	var result map[string]any
+	return c.post(ctx, path, body, &result)
+}
+
 func (c *Client) Session(ctx context.Context, projectID, sessionID string) (SessionDetail, error) {
 	var result SessionDetail
 	if !projectIDPattern.MatchString(projectID) || sessionID == "" {

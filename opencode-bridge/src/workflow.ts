@@ -104,6 +104,16 @@ export async function replyProjectPermission(
   await client.permission.reply({ sessionID, requestID, decision });
 }
 
+export async function interruptProjectSession(
+  client: OpenCodeClient,
+  project: AllowedProject,
+  sessionID: string,
+): Promise<void> {
+  const session = await assertSessionProject(client, project, sessionID);
+  if (!session.time.busy) throw new Error("session_not_running");
+  await client.session.interrupt({ sessionID });
+}
+
 export async function readProjectSession(
   client: OpenCodeClient,
   project: AllowedProject,

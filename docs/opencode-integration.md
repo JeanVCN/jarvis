@@ -36,6 +36,10 @@ registra os limites que devem orientar a qualificação no computador-alvo.
 - `permission.list/get/reply` consultam pedidos pendentes por sessão. `reply`
   aceita `once`, `always` ou `reject`; `always` pode salvar autorização e não
   deve ser oferecido como aprovação normal na UI móvel.
+- `session.interrupt` solicita que o OpenCode pare a execução atual. O aceite da
+  chamada não garante parada instantânea nem desfaz arquivos/efeitos já
+  produzidos; após resposta ou erro incerto, consultar novamente a sessão. Nunca
+  repetir automaticamente uma interrupção cujo resultado seja incerto.
 
 ## Contrato de segurança para escrita implementado
 
@@ -56,10 +60,12 @@ registra os limites que devem orientar a qualificação no computador-alvo.
    claramente identificados. Responder por padrão apenas `once` ou `reject`;
    rejeitar `always` no contrato público inicial. Revalidar sessão e pedido
    pendente imediatamente antes da resposta.
-5. `session.prompt` é uma mutação com efeito externo. Registrar uma operação
+5. `session.prompt` e `session.interrupt` são mutações com efeito externo.
+   Registrar cada operação
    Jarvis antes de chamá-la e separar estados `submitting`, `accepted`, `running`,
    `completed`, `failed` e `uncertain`. Uma falha/timeout após iniciar a chamada
-   não autoriza repetição automática. `id` opcional não será tratado como chave
+   não autoriza repetição automática. Interromper não reverte alterações já
+   realizadas. `id` opcional não será tratado como chave
    idempotente até isso ser confirmado em teste/documentação de servidor.
 6. Em `uncertain`, consultar inbox, mensagens e estado persistido para reconciliar
    antes de habilitar retry manual. Se não for possível provar se o prompt foi
@@ -96,9 +102,10 @@ registra os limites que devem orientar a qualificação no computador-alvo.
    projeto descartável e autorização explícita do usuário.
 4. Validar as regras Tailscale com um dispositivo autorizado e outro negado; o
    serviço de desenvolvimento não foi executado por esta implementação.
-5. Depois da qualificação, avaliar eventos ao vivo, interrupção explícita e
-   resolução manual de operações incertas. Não repetir automaticamente nenhuma
-   operação cujo resultado permaneça desconhecido.
+5. Interrupção explícita está implementada via UI/Core/bridge e journal; validar
+   comportamento e reconciliação contra OpenCode real. Depois da qualificação,
+   avaliar eventos ao vivo e resolução manual de operações incertas. Não repetir
+   automaticamente nenhuma operação cujo resultado permaneça desconhecido.
 
 Restrição de custo: orçamento incremental R$ 0. Não adicionar chave com cobrança
 por uso nem fallback pago. Usar apenas uma conta/provedor que o usuário já tenha
