@@ -405,6 +405,37 @@ Resposta esperada:
 }
 ```
 
+## WhatsApp — texto em modo experimental
+
+O processo opcional em `backend/whatsapp` usa Go 1.26+, CGO com compilador C
+e o Ollama do Jarvis. Inicie o Ollama com o modelo escolhido disponível e
+execute na raiz do repositório:
+
+```sh
+cd backend/whatsapp
+JARVIS_WHATSAPP_MODE=self OLLAMA_MODEL=llama3.2 go run .
+```
+
+No WhatsApp da conta escolhida, abra **Aparelhos conectados** e escaneie o QR
+do terminal. Espere aparecer `WhatsApp conectado`. No chat **Você**, envie
+`/jarvis Responda com a palavra pronto`. A resposta aparece no mesmo chat
+com o prefixo `Jarvis:`. Envie uma mensagem comum e confirme que ela fica
+sem resposta. Em uma reinicialização, o dispositivo vinculado é reutilizado.
+
+Para usar um contato separado, inicie o processo com
+`JARVIS_WHATSAPP_MODE=contact` e `JARVIS_WHATSAPP_OWNER` igual ao seu número
+com país e DDD, só com dígitos. Pareie o QR com a conta do Jarvis e mande
+texto do número autorizado para ela. Para trocar a conta vinculada, encerre
+o processo, remova o aparelho nos **Aparelhos conectados** e remova o
+arquivo `jarvis/whatsapp/device.db` do seu diretório de configuração
+(`~/.config` por padrão no Linux) antes de gerar outro QR.
+
+O banco local do dispositivo contém credenciais de pareamento. O processo
+não grava um histórico de conversas do Jarvis, e cada prompt vai ao Ollama
+isoladamente. `OLLAMA_URL` usa `http://127.0.0.1:11434` por padrão. O
+`whatsmeow` é uma integração não oficial, sujeita a desconexão ou restrição
+da conta. O teste com uma conta real continua pendente.
+
 ## 🛠️ Tools
 
 Listar ferramentas:

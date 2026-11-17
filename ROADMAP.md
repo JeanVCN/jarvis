@@ -538,15 +538,12 @@ compatibilidade confirmada. Não iniciar A2/A3 se A1 falhar.
 - Voice realtime pode evoluir em paralelo no `voice-agent`, desde que o backend Go continue sendo a autoridade para tools, memoria e permissoes.
 - Agents devem aguardar definicao de tools, memory e limites de seguranca.
 
-## Ideia em avaliação — Jarvis como contato no WhatsApp
+## WhatsApp — primeira etapa de texto
 
-- Objetivo: conversar com o Jarvis pelo WhatsApp em um chat individual, usando um número separado para o assistente. Começar com texto. Depois, avaliar mensagens de voz com o STT/TTS do Jarvis.
-- Arquitetura inicial: um adaptador de canal recebe mensagens, aceita apenas a conversa privada do número autorizado, deduplica pelo ID da mensagem e usa o fluxo de conversa do Core. Definir como vincular a conversa do WhatsApp ao histórico e à memória existentes. Manter comandos de desenvolvimento e aprovações do OpenCode na interface privada.
-- Custo-alvo: R$ 0 adicionais, incluindo número ativo, transporte e motor de IA. A Cloud API da Meta oferece mensagens de serviço gratuitas na janela de 24 horas, mas a elegibilidade e eventual tarifa específica para um assistente cujo produto principal é IA precisam ser confirmadas no Brasil. O webhook oficial exige HTTPS acessível à Meta. Se escolhido, expor apenas um receptor isolado, com verificação de assinatura, mantendo Core e interface na tailnet. Na primeira versão, enviar somente respostas dentro da janela, sem templates pagos.
-- Alternativa experimental: `whatsmeow` em Go, via dispositivo vinculado. Não exige webhook público nem tarifa da Cloud API, mas é uma integração não oficial, sujeita a desconexão, incompatibilidades e restrições de conta. Avaliar somente com número secundário, caso já exista um sem custo adicional.
-- Próxima decisão: confirmar regras e custo da via oficial para esse uso antes de escolher o transporte. Esta entrada registra a ideia para avaliação futura.
-
-Referências: [preços do WhatsApp Business](https://business.whatsapp.com/products/platform-pricing), [medida preventiva do Cade](https://www.gov.br/cade/pt-br/assuntos/noticias/cade-abre-inquerito-contra-meta-e-aplica-medida-preventiva-suspendendo-novos-termos-do-whatsapp-sobre-ia) e [whatsmeow](https://github.com/tulir/whatsmeow).
+- Implementado como processo opcional em `backend/whatsapp`, via `whatsmeow`. O modo `self` recebe comandos `/jarvis` no chat consigo mesmo. O modo `contact` recebe texto de um único remetente autorizado na conta secundária.
+- Nesta etapa, cada mensagem é processada isoladamente pelo adaptador Ollama existente. A deduplicação é limitada à execução atual. O SQLite guarda estado do dispositivo vinculado para reconectar após reinício.
+- Próximo teste: parear a conta escolhida e confirmar recebimento e envio na instalação real. A integração não oficial está sujeita a desconexões e mudanças do WhatsApp.
+- Segunda etapa: definir vínculo com o histórico e a memória do Jarvis de maneira independente do número usado. Mensagens de voz e avaliação da Cloud API oficial ficam para depois.
 
 ## Atualização 2026-11-13 — Laboratório de voz contínua
 

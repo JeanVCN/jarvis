@@ -156,6 +156,15 @@ Referências oficiais a conferir em A0: [início Android](https://developers.hom
 [tipos suportados](https://developers.home.google.com/apis/android/supported-device-types)
 e [comandos](https://developers.home.google.com/apis/android/device/control).
 
+## Canal opcional de texto via WhatsApp
+
+`backend/whatsapp` é um processo separado com seu próprio módulo Go. Ele
+recebe eventos via dispositivo vinculado, filtra a conversa autorizada e usa
+`internal/ai.OllamaProvider` para responder ao texto. A ligação com o
+PostgreSQL e com as sessões de conversa do Core fica para a etapa de histórico.
+O SQLite local guarda o pareamento do dispositivo. O canal não abre portas
+de entrada no host.
+
 ## Documentação das fases anteriores
 
 ## Estrutura Atual
