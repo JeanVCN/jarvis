@@ -65,7 +65,22 @@ function parseInlineImage(value: unknown): InlineImage | undefined {
   if ((mime !== "image/jpeg" && mime !== "image/png" && mime !== "image/webp") || typeof base64 !== "string" || !base64) {
     throw new Error("invalid_image");
   }
-  if (base64.length > Math.ceil(maxImageBytes / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
+  if (base64.length > Math.ceil(maxImageBytes / 3) * 4 || base64.length % 4 !== 0) {
+    throw new Error("invalid_image");
+  }
+  let padding = 0;
+  for (let i = 0; i < base64.length; i++) {
+    const code = base64.charCodeAt(i);
+    const isLetter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    const isDigit = code >= 48 && code <= 57;
+    if (isLetter || isDigit || code === 43 || code === 47) {
+      if (padding > 0) throw new Error("invalid_image");
+      continue;
+    }
+    if (code === 61 && i >= base64.length - 2 && padding < 2) {
+      padding++;
+      continue;
+    }
     throw new Error("invalid_image");
   }
   const bytes = Buffer.from(base64, "base64");

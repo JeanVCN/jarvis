@@ -30,6 +30,9 @@ func NewHTTPSpeechRecognizer(transcribeURL string, statusURL string, language st
 		language:      strings.TrimSpace(language),
 		client: &http.Client{
 			Timeout: 2 * time.Minute,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 	}
 }
