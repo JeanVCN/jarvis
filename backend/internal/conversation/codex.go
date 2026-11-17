@@ -23,6 +23,8 @@ type Codex struct {
 	threadStore         ThreadStore
 }
 
+const maxCodexAppServerFrameBytes = 16 << 20
+
 // ThreadStore persists only the provider-native thread identifier. Message
 // content remains inside the Codex thread store under CODEX_HOME.
 type ThreadStore interface {
@@ -111,7 +113,9 @@ func (p Codex) stream(ctx context.Context, messages []Message, imageMIME string,
 	var mu sync.Mutex
 	send := func(v any) error { mu.Lock(); defer mu.Unlock(); return json.NewEncoder(input).Encode(v) }
 	scan := bufio.NewScanner(output)
-	scan.Buffer(make([]byte, 8192), 2*1024*1024)
+	// The App Server echoes inline images in JSON notifications. A 10 MiB
+	// image expands to about 13.4 MiB as base64, before JSON framing.
+	scan.Buffer(make([]byte, 8192), maxCodexAppServerFrameBytes)
 	// App Server notifications may arrive before the response to turn/start.
 	// Keep them while waiting for request IDs instead of silently dropping them.
 	pending := make([]json.RawMessage, 0, 8)

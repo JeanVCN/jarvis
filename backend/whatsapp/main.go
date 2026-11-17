@@ -267,7 +267,9 @@ func run(ctx context.Context) error {
 			} else {
 				reply, routeErr = router.reply(replyCtx, string(event.Info.ID), prompt)
 			}
-			codeMode, modeErr := router.codeMode(replyCtx)
+			modeCtx, cancelMode := context.WithTimeout(ctx, 5*time.Second)
+			codeMode, modeErr := router.codeMode(modeCtx)
+			cancelMode()
 			if routeErr == nil && modeErr != nil {
 				routeErr = modeErr
 			}
