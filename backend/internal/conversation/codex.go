@@ -5,6 +5,7 @@ package conversation
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -60,6 +61,17 @@ func newCodex(model string, textOnly bool) (Provider, error) {
 	return Codex{Model: model, Home: home, Binary: bin, textOnly: textOnly}, nil
 }
 func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string) error) ([]Call, error) {
+	return p.stream(ctx, messages, "", nil, emit)
+}
+
+func (p Codex) StreamImage(ctx context.Context, messages []Message, mimeType string, image []byte, emit func(string) error) ([]Call, error) {
+	if !p.textOnly || !supportedImageMIME(mimeType) || len(image) == 0 || len(image) > 10<<20 {
+		return nil, &Failure{Code: "invalid_image_input"}
+	}
+	return p.stream(ctx, messages, mimeType, image, emit)
+}
+
+func (p Codex) stream(ctx context.Context, messages []Message, imageMIME string, image []byte, emit func(string) error) ([]Call, error) {
 	work := ""
 	var e error
 	persistentThread := p.textOnly && p.threadStore != nil
@@ -194,7 +206,12 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 	if e != nil {
 		return nil, e
 	}
-	result, e := request(4, "turn/start", map[string]any{"threadId": thread.ID, "input": []any{map[string]any{"type": "text", "text": contextText, "text_elements": []any{}}}})
+	turnInput := []any{map[string]any{"type": "text", "text": contextText, "text_elements": []any{}}}
+	if len(image) > 0 {
+		dataURL := "data:" + imageMIME + ";base64," + base64.StdEncoding.EncodeToString(image)
+		turnInput = append(turnInput, map[string]any{"type": "image", "url": dataURL})
+	}
+	result, e := request(4, "turn/start", map[string]any{"threadId": thread.ID, "input": turnInput})
 	if e != nil {
 		return nil, e
 	}
@@ -305,6 +322,15 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 		return nil, ctx.Err()
 	}
 	return nil, errors.New("codex_incomplete_stream")
+}
+
+func supportedImageMIME(mimeType string) bool {
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func codexConversationInput(messages []Message) (string, error) {

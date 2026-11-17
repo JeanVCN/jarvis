@@ -18,6 +18,12 @@ as if they were already enforced.
   configured OpenCode session. Audio must not switch modes or select an
   executor by inference. A routing failure must not fall back to another
   provider.
+- **Image privacy:** original JPEG, PNG, or WebP photos (up to 10 MiB) are sent
+  inline to the explicitly selected Codex or OpenCode destination without local
+  OCR or transformation. The Jarvis process does not persist the bytes, but the
+  Codex thread or OpenCode session/provider may retain them. Verify no path
+  silently copies them into Jarvis SQLite, logs, or a different provider.
+  Image captions and media must never change the active `/code` route.
 - **GPT/Codex isolation:** GPT/Codex must not gain local filesystem, shell,
   desktop, or arbitrary network tools. The persistent conversation history is
   stored by Codex under `CODEX_HOME`; the Jarvis SQLite database should retain

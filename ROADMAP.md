@@ -152,17 +152,22 @@ real ainda está pendente.
 - As respostas são texto por enquanto. Resposta sintetizada em nota de voz e
   validação com gravações reais em português continuam pendentes.
 
-### Imagens — proposta para o chat normal
+### Imagens — encaminhamento direto implementado; validar no piloto
 
-- Receber foto com legenda e responder à pergunta sobre a imagem. Começar
-  avaliando OCR local quando a tarefa for extrair texto. Comparar um modelo
-  visual local compatível com o notebook com uma opção multimodal remota,
-  sujeita à escolha explícita de enviar a imagem. O adaptador atual do
-  WhatsApp só encaminha texto.
-- Validar tipo, tamanho e dimensões antes de processar. Manter imagens
-  temporárias fora do histórico por padrão. Texto lido da imagem é conteúdo da
-  conversa. QR, OCR e instruções dentro da imagem nunca acionam dispositivos.
-  Anexos para OpenCode ficam para uma etapa própria.
+- Fotos JPEG, PNG e WebP de até 10 MiB no chat **Você** são encaminhadas sem
+  OCR, redimensionamento ou classificação local. A legenda acompanha a imagem;
+  sem legenda, o Jarvis pede ao modelo para analisá-la.
+- No modo normal, os bytes seguem inline como entrada de imagem para a thread
+  Codex persistente. No modo `/code`, seguem como arquivo inline à sessão
+  OpenCode existente. A escolha segue apenas o modo atual; imagens e legendas
+  não podem alternar `/code`. Não há fallback entre provedores.
+- O processo Jarvis só mantém os bytes em memória durante o encaminhamento e
+  não os grava no SQLite ou nos logs. Codex pode manter a imagem na thread em
+  `CODEX_HOME`; OpenCode pode mantê-la na sessão e o modelo escolhido por ele
+  pode ser remoto. O provedor/modelo precisa aceitar visão.
+- Validar com foto real e legenda nos dois modos, verificar a retenção no Codex
+  e OpenCode, e confirmar resposta útil. QR code e instruções dentro da imagem
+  nunca autorizam ações físicas; `/cmd` permanece adiado até a ponte Android.
 
 ### Ações locais — `/cmd` de um único turno
 

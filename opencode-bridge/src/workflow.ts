@@ -5,6 +5,7 @@ import type { AllowedProject } from "./projects.js";
 
 const operationIDPattern = /^[a-f0-9]{32}$/;
 const maxDiffBytes = 64 * 1024;
+export type InlineImage = { mime: "image/jpeg" | "image/png" | "image/webp"; base64: string };
 
 export type SafeSession = {
   id: string;
@@ -87,9 +88,15 @@ export async function sendProjectPrompt(
   sessionID: string,
   operationID: string,
   text: string,
+  image?: InlineImage,
 ): Promise<{ inbox_id: string }> {
   await assertSessionProject(client, project, sessionID);
-  const accepted = await client.session.prompt({ sessionID, id: operationID, text });
+  const files = image ? [{
+    uri: `data:${image.mime};base64,${image.base64}`,
+    source: { type: "inline" as const },
+    name: "whatsapp-image",
+  }] : undefined;
+  const accepted = await client.session.prompt({ sessionID, id: operationID, text, ...(files ? { files } : {}) });
   return { inbox_id: accepted.id };
 }
 

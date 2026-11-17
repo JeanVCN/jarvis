@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"mime"
 	"net"
 	"net/url"
 	"os"
@@ -99,6 +100,9 @@ func run(ctx context.Context) error {
 		db:      routesDB,
 		project: strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OPENCODE_PROJECT")),
 		chat:    func(ctx context.Context, prompt string) string { return generateReply(ctx, provider, prompt) },
+		imageChat: func(ctx context.Context, prompt, mimeType string, data []byte) string {
+			return generateImageReply(ctx, provider, prompt, mimeType, data)
+		},
 	}
 	if router.project != "" {
 		bridgeURL := os.Getenv("JARVIS_OPENCODE_BRIDGE_URL")
@@ -151,7 +155,7 @@ func run(ctx context.Context) error {
 			if !isSelfChatSource(event.Info.MessageSource, owner, device.GetJID(), device.GetLID()) {
 				return
 			}
-			if incomingText(event) == "" && !isVoiceNote(event) {
+			if incomingText(event) == "" && !isVoiceNote(event) && !isImageMessage(event) {
 				return
 			}
 			select {
@@ -200,8 +204,30 @@ func run(ctx context.Context) error {
 			}
 			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
-			isVoice := prompt == "" && isVoiceNote(event)
+			isImage := isImageMessage(event)
+			isVoice := !isImage && prompt == "" && isVoiceNote(event)
 			transcriptionFailed := false
+			imageFailed := false
+			imageMIME := ""
+			var imageData []byte
+			if isImage {
+				image := event.Message.GetImageMessage()
+				var imageErr error
+				imageMIME, imageErr = supportedWhatsAppImageMIME(image.GetMimetype())
+				if imageErr == nil && image.GetFileLength() > maxWhatsAppImageBytes {
+					imageErr = errors.New("imagem excede o limite de 10 MiB")
+				}
+				if imageErr == nil {
+					imageData, imageErr = client.Download(replyCtx, image)
+				}
+				if imageErr == nil && (len(imageData) == 0 || len(imageData) > maxWhatsAppImageBytes) {
+					imageErr = errors.New("tamanho de imagem inválido")
+				}
+				if imageErr != nil {
+					log.Print("Não foi possível receber a imagem do WhatsApp")
+					imageFailed = true
+				}
+			}
 			if isVoice {
 				transcript, sttErr := transcribeVoice(replyCtx, client, event, recognizer)
 				if sttErr != nil {
@@ -212,19 +238,24 @@ func run(ctx context.Context) error {
 					prompt = transcript
 				}
 			}
-			if prompt == "" {
+			if prompt == "" && !isImage {
 				cancel()
 				continue
 			}
 			var reply string
 			var routeErr error
-			if transcriptionFailed {
+			if imageFailed {
+				reply = "Não consegui encaminhar essa imagem. Envie uma imagem JPEG, PNG ou WebP de até 10 MiB."
+			} else if isImage {
+				reply, routeErr = router.replyImage(replyCtx, string(event.Info.ID), prompt, imageMIME, imageData)
+			} else if transcriptionFailed {
 				reply = prompt
 			} else if isVoice {
 				reply, routeErr = router.replyTranscription(replyCtx, string(event.Info.ID), prompt)
 			} else {
 				reply, routeErr = router.reply(replyCtx, string(event.Info.ID), prompt)
 			}
+			clear(imageData)
 			cancel()
 			if routeErr != nil {
 				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", routeErr)
@@ -262,6 +293,7 @@ func (s whatsappThreadStore) Set(ctx context.Context, id string) error {
 }
 
 const maxWhatsAppVoiceBytes = 15 << 20
+const maxWhatsAppImageBytes = 10 << 20
 
 func whatsappSpeechRecognizer(cfg config.Config) (voice.SpeechRecognizer, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.VoiceSTTProvider)) {
@@ -292,6 +324,23 @@ func isLoopbackURL(raw string) bool {
 
 func isVoiceNote(event *events.Message) bool {
 	return event != nil && event.Message != nil && event.Message.GetAudioMessage().GetPTT()
+}
+
+func isImageMessage(event *events.Message) bool {
+	return event != nil && event.Message != nil && event.Message.GetImageMessage() != nil
+}
+
+func supportedWhatsAppImageMIME(raw string) (string, error) {
+	mediaType, _, err := mime.ParseMediaType(raw)
+	if err != nil {
+		return "", errors.New("tipo de imagem inválido")
+	}
+	switch strings.ToLower(mediaType) {
+	case "image/jpeg", "image/png", "image/webp":
+		return strings.ToLower(mediaType), nil
+	default:
+		return "", errors.New("tipo de imagem não suportado")
+	}
 }
 
 func transcribeVoice(ctx context.Context, client *whatsmeow.Client, event *events.Message, recognizer voice.SpeechRecognizer) (string, error) {
@@ -369,6 +418,9 @@ func incomingText(event *events.Message) string {
 	if body == "" {
 		body = strings.TrimSpace(event.Message.GetExtendedTextMessage().GetText())
 	}
+	if body == "" {
+		body = strings.TrimSpace(event.Message.GetImageMessage().GetCaption())
+	}
 	return body
 }
 
@@ -417,4 +469,38 @@ func generateReply(ctx context.Context, provider conversation.Provider, prompt s
 	}
 	log.Print("GPT indisponível para responder à mensagem do WhatsApp")
 	return "Não consegui obter uma resposta do GPT agora. Tente novamente daqui a pouco."
+}
+
+func generateImageReply(ctx context.Context, provider conversation.Provider, prompt, mimeType string, data []byte) string {
+	imageProvider, ok := provider.(conversation.ImageProvider)
+	if !ok {
+		return "O provedor Codex configurado não aceita imagens. A imagem não foi encaminhada."
+	}
+	if prompt == "" {
+		prompt = "Analise a imagem enviada."
+	}
+	var response strings.Builder
+	calls, err := imageProvider.StreamImage(ctx, []conversation.Message{{Role: "user", Content: prompt}}, mimeType, data, func(delta string) error {
+		response.WriteString(delta)
+		return nil
+	})
+	reply := strings.TrimSpace(response.String())
+	if err == nil && len(calls) == 0 && reply != "" {
+		return reply
+	}
+	if err == nil && len(calls) > 0 {
+		return "O Codex pediu uma ferramenta, mas o chat de imagens não permite executar ferramentas."
+	}
+	if failure, ok := err.(*conversation.Failure); ok {
+		switch failure.Code {
+		case "chatgpt_login_required", "authentication_required":
+			return "O GPT precisa que você entre novamente no ChatGPT no perfil Codex do Jarvis."
+		case "quota_exhausted":
+			return "O limite de uso do GPT foi atingido. Tente mais tarde."
+		case "model_unavailable":
+			return "O modelo GPT configurado está indisponível para esta conta."
+		}
+	}
+	log.Print("GPT indisponível para analisar a imagem do WhatsApp")
+	return "Não consegui obter uma resposta sobre a imagem agora. Tente novamente daqui a pouco."
 }

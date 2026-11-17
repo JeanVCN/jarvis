@@ -20,11 +20,21 @@ type codeBridge interface {
 	Prompt(context.Context, string, string, string, string) (opencode.PromptAccepted, error)
 }
 
+type imageCodeBridge interface {
+	PromptImage(context.Context, string, string, string, string, string, []byte) (opencode.PromptAccepted, error)
+}
+
+type imageAttachment struct {
+	mime string
+	data []byte
+}
+
 type messageRouter struct {
-	db      *sql.DB
-	project string
-	bridge  codeBridge
-	chat    func(context.Context, string) string
+	db        *sql.DB
+	project   string
+	bridge    codeBridge
+	chat      func(context.Context, string) string
+	imageChat func(context.Context, string, string, []byte) string
 }
 
 func (r messageRouter) init(ctx context.Context) error {
@@ -51,16 +61,23 @@ func (r messageRouter) init(ctx context.Context) error {
 }
 
 func (r messageRouter) reply(ctx context.Context, id, text string) (string, error) {
-	return r.replyWithModePolicy(ctx, id, text, true)
+	return r.replyWithModePolicy(ctx, id, text, true, nil)
 }
 
 // A transcript follows the current route but can never switch it. Only a
 // typed message may toggle /code.
 func (r messageRouter) replyTranscription(ctx context.Context, id, text string) (string, error) {
-	return r.replyWithModePolicy(ctx, id, text, false)
+	return r.replyWithModePolicy(ctx, id, text, false, nil)
 }
 
-func (r messageRouter) replyWithModePolicy(ctx context.Context, id, text string, allowModeToggle bool) (string, error) {
+func (r messageRouter) replyImage(ctx context.Context, id, caption, mime string, data []byte) (string, error) {
+	if caption == "" {
+		caption = "Analise a imagem enviada."
+	}
+	return r.replyWithModePolicy(ctx, id, caption, false, &imageAttachment{mime: mime, data: data})
+}
+
+func (r messageRouter) replyWithModePolicy(ctx context.Context, id, text string, allowModeToggle bool, image *imageAttachment) (string, error) {
 	// Commit mode changes and deduplication together. Persist only routing
 	// metadata, so a replay cannot forward a code prompt to GPT.
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -96,12 +113,29 @@ func (r messageRouter) replyWithModePolicy(ctx context.Context, id, text string,
 		return "Modo OpenCode desativado. As próximas mensagens vão para o GPT normal.", nil
 	}
 	if code {
+		if image != nil {
+			return r.codeImageReply(ctx, text, image.mime, image.data), nil
+		}
 		return r.codeReply(ctx, text), nil
+	}
+	if image != nil {
+		if r.imageChat == nil {
+			return "O encaminhamento de imagens ao GPT não está disponível nesta configuração.", nil
+		}
+		return r.imageChat(ctx, text, image.mime, image.data), nil
 	}
 	return r.chat(ctx, text), nil
 }
 
 func (r messageRouter) codeReply(ctx context.Context, text string) string {
+	return r.codeReplyWithImage(ctx, text, "", nil)
+}
+
+func (r messageRouter) codeImageReply(ctx context.Context, text, mime string, image []byte) string {
+	return r.codeReplyWithImage(ctx, text, mime, image)
+}
+
+func (r messageRouter) codeReplyWithImage(ctx context.Context, text, mime string, image []byte) string {
 	const unavailable = "OpenCode indisponível. A mensagem não foi enviada ao GPT normal."
 	if r.bridge == nil || r.project == "" {
 		return unavailable
@@ -126,7 +160,17 @@ func (r messageRouter) codeReply(ctx context.Context, text string) string {
 		return "A sessão do OpenCode está ocupada. Veja a tarefa ou a aprovação pendente no OpenCode local."
 	}
 
-	accepted, err := r.bridge.Prompt(ctx, r.project, sessionID, operationID(), text)
+	operation := operationID()
+	var accepted opencode.PromptAccepted
+	if len(image) > 0 {
+		imageBridge, ok := r.bridge.(imageCodeBridge)
+		if !ok {
+			return "O bridge do OpenCode não aceita imagens. A imagem não foi encaminhada."
+		}
+		accepted, err = imageBridge.PromptImage(ctx, r.project, sessionID, operation, text, mime, image)
+	} else {
+		accepted, err = r.bridge.Prompt(ctx, r.project, sessionID, operation, text)
+	}
 	if err != nil || accepted.InboxID == "" {
 		return "Não consegui confirmar se o OpenCode recebeu a tarefa. Confira a sessão local antes de reenviar."
 	}

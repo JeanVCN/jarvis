@@ -786,6 +786,36 @@ Impacto:
 - Build e piloto com Codex/STT reais continuam pendentes neste ambiente. Não
   houve validação de qualidade com gravações reais.
 
+### 2026-11-17 - Encaminhamento direto de imagens no WhatsApp
+
+Status: implementado; compatibilidade real dos modelos e retenção pendentes de
+piloto.
+
+Contexto:
+
+- O usuário quer perguntar sobre imagens sem criar OCR ou classificador local.
+- O canal já mantém uma rota explícita entre a conversa Codex e a sessão
+  OpenCode; o uso deve preservar essa fronteira.
+
+Decisão:
+
+- Encaminhar fotos JPEG, PNG e WebP até 10 MiB como anexos inline originais:
+  `UserInput.image` no Codex App Server ou `files` inline na sessão OpenCode.
+- Incluir a legenda como texto, ou usar um pedido curto de análise quando não
+  houver legenda. Legenda `/code` não alterna o modo; só texto digitado pode
+  alternar. Erros de destino não encaminham a imagem a outro provedor.
+- Não aplicar OCR, redimensionamento ou classificação local. Os bytes ficam em
+  memória durante o envio, sem persistência ou log pelo Jarvis. O provedor pode
+  manter a imagem na thread/sessão e seu modelo pode ser remoto.
+
+Impacto:
+
+- GPT/Codex recebe apenas a imagem anexada ao turno, sem ferramentas ou acesso
+  genérico ao filesystem. OpenCode recebe a imagem na sessão do projeto já
+  allowlisted, com as permissões de execução existentes.
+- Modelos selecionados precisam suportar visão. Compatibilidade, qualidade,
+  latência e retenção de conteúdo devem ser confirmadas no piloto real.
+
 
 ### 2026-11-16 - Comando de IoT local por mensagem
 

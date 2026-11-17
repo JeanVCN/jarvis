@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -189,6 +190,25 @@ func (c *Client) Prompt(ctx context.Context, projectID, sessionID, operationID, 
 	return result, err
 }
 
+func (c *Client) PromptImage(ctx context.Context, projectID, sessionID, operationID, text, mimeType string, image []byte) (PromptAccepted, error) {
+	var result PromptAccepted
+	if !projectIDPattern.MatchString(projectID) || !validOperationID(operationID) || sessionID == "" ||
+		len(text) == 0 || len(text) > 8000 || len(image) == 0 || len(image) > 10<<20 || !supportedImageMIME(mimeType) {
+		return result, errors.New("opencode_request_invalid")
+	}
+	body := map[string]any{
+		"operation_id": operationID,
+		"text":         text,
+		"image": map[string]string{
+			"mime":   mimeType,
+			"base64": base64.StdEncoding.EncodeToString(image),
+		},
+	}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/prompts"
+	err := c.post(ctx, path, body, &result)
+	return result, err
+}
+
 func (c *Client) ReplyPermission(ctx context.Context, projectID, sessionID, requestID, operationID, decision string) error {
 	if !projectIDPattern.MatchString(projectID) || sessionID == "" || requestID == "" || !validOperationID(operationID) || (decision != "once" && decision != "reject") {
 		return errors.New("opencode_request_invalid")
@@ -225,6 +245,15 @@ func validOperationID(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil && strings.ToLower(value) == value
+}
+
+func supportedImageMIME(mimeType string) bool {
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) get(ctx context.Context, path string, target any) error {

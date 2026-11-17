@@ -170,6 +170,8 @@ configuração. O processo envia as respostas pela mesma conexão, com marca
 | Texto ou transcrição PTT no chat normal | Thread Codex persistente via `internal/conversation`; o SQLite guarda somente seu ID e o conteúdo fica no `CODEX_HOME`. |
 | Texto no modo OpenCode | `internal/opencode.Client` → bridge HTTP com token em loopback → sessão do projeto permitido. A resposta volta direto ao WhatsApp. |
 | Transcrição PTT no modo OpenCode | Sessão OpenCode existente; sem fallback para GPT se o bridge estiver indisponível. |
+| Foto no chat normal | Bytes originais como `UserInput.image` inline para a thread Codex persistente; sem OCR ou transformação local. |
+| Foto no modo OpenCode | Anexo `data:` inline pela bridge autenticada e sessão OpenCode allowlisted; sem fallback para GPT. |
 
 O SQLite guarda estado do dispositivo, modo, vínculos com sessões e IDs de
 mensagem por conta, mais o ID da thread Codex. Notas PTT de até 120 segundos e
@@ -180,6 +182,9 @@ enviar dados ao modelo configurado nela. A API do Core, o frontend e o
 Tailscale são independentes do canal WhatsApp. Retenção/exclusão da thread,
 resposta falada e piloto real seguem pendentes no
 [roadmap](ROADMAP.md#prioridade-atual--jarvis-pessoal-no-whatsapp).
+Fotos JPEG, PNG e WebP até 10 MiB são encaminhadas sem transformação; seus
+bytes não são gravados pelo Jarvis, mas o provedor pode retê-los no contexto
+da thread Codex ou sessão OpenCode.
 
 GPT/Codex permanece sem ferramentas locais de filesystem ou shell. OpenCode é o
 único executor local para desenvolvimento. Integrações de trabalho externo,

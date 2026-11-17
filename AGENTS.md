@@ -32,10 +32,12 @@ notes conflict.
   chat. Apply that check before extracting or forwarding message content.
 - Route messages only to the explicitly selected mode. In particular,
   OpenCode unavailability must not forward a `/code` request to GPT, and voice
-  transcription must not silently change the selected mode.
-- Audio and transcripts should not be logged or copied into Jarvis databases as
-  message history. The Codex provider's own persistent thread under `CODEX_HOME`
-  is an explicitly separate store; review any new retention or export path.
+  transcription or image captions must not silently change the selected mode.
+- Audio, transcripts, and original image bytes should not be logged or copied
+  into Jarvis databases as message history. Images are forwarded inline to the
+  explicitly selected provider without OCR or transformation; Codex's thread
+  under `CODEX_HOME` and OpenCode's own session may retain them. Review any new
+  retention or export path, and do not claim provider-side deletion guarantees.
 - Preserve the zero-additional-cost constraint. Do not introduce paid services,
   external audio processing, or automatic paid fallbacks without explicit
   opt-in and documentation.

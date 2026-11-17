@@ -405,7 +405,7 @@ Resposta esperada:
 }
 ```
 
-## WhatsApp — texto e notas de voz em modo experimental
+## WhatsApp — texto, notas de voz e imagens em modo experimental
 
 O canal usa seu próprio número, Go 1.26+, CGO com compilador C e o GPT
 autenticado pelo Codex App Server. Prepare uma vez o [perfil Codex do
@@ -439,6 +439,15 @@ transcrição não pode ativar `/code` por conta própria e uma falha no OpenCod
 nunca redireciona o conteúdo ao GPT. Sem STT local disponível, o Jarvis pede
 outro áudio ou texto. Mensagens com áudio que não sejam notas PTT continuam
 ignoradas.
+
+Fotos do WhatsApp no chat **Você** são encaminhadas no formato original,
+sem OCR, redimensionamento ou classificação local. O MVP aceita JPEG, PNG e
+WebP de até 10 MiB, com legenda opcional. A rota respeita o modo atual: no modo
+normal a imagem segue inline ao Codex; em `/code`, segue como anexo inline à
+sessão OpenCode. Não há fallback para outro provedor se o destino não aceitar
+imagens. O Jarvis mantém os bytes apenas durante o encaminhamento, mas o Codex
+pode reter a imagem na thread persistente e o OpenCode na própria sessão; o
+modelo configurado no OpenCode pode ser remoto. Use apenas modelos com visão.
 
 O SQLite também guarda as credenciais do dispositivo vinculado para reconectar. Para parear outra
 conta, execute o mesmo comando com o novo número em `JARVIS_WHATSAPP_OWNER` e escaneie o QR nessa conta. Cada número tem
