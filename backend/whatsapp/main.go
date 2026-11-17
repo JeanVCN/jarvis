@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -57,7 +59,10 @@ func run(ctx context.Context) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	dbPath := filepath.Join(dir, "device.db")
+	dbPath, err := accountStorePath(ctx, dir, owner)
+	if err != nil {
+		return err
+	}
 	file, err := os.OpenFile(dbPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return err
@@ -87,6 +92,13 @@ func run(ctx context.Context) error {
 	client := whatsmeow.NewClient(device, nil)
 	client.EnableAutoReconnect = true
 	client.ManualHistorySyncDownload = true
+	client.PrePairCallback = func(jid types.JID, _, _ string) bool {
+		if jid.ToNonAD() == owner {
+			return true
+		}
+		log.Print("QR recusado: a conta não corresponde a JARVIS_WHATSAPP_OWNER")
+		return false
+	}
 	defer client.Disconnect()
 
 	incoming := make(chan *events.Message, 16)
@@ -174,6 +186,51 @@ func run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// Reuse an existing single-account database only for its original owner.
+func accountStorePath(ctx context.Context, dir string, owner types.JID) (string, error) {
+	accountPath := filepath.Join(dir, "device-"+owner.User+".db")
+	if _, err := os.Stat(accountPath); !errors.Is(err, os.ErrNotExist) {
+		return accountPath, err
+	}
+
+	legacyPath := filepath.Join(dir, "device.db")
+	if _, err := os.Stat(legacyPath); errors.Is(err, os.ErrNotExist) {
+		return accountPath, nil
+	} else if err != nil {
+		return "", err
+	}
+
+	dsn := url.URL{Scheme: "file", Path: legacyPath, RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite3", dsn.String())
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+
+	var schemaExists bool
+	err = db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='whatsmeow_device')").Scan(&schemaExists)
+	if err != nil || !schemaExists {
+		return accountPath, err
+	}
+
+	var jid string
+	err = db.QueryRowContext(ctx, "SELECT jid FROM whatsmeow_device LIMIT 1").Scan(&jid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return accountPath, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("verificar pareamento anterior: %w", err)
+	}
+	linked, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("ler conta do pareamento anterior: %w", err)
+	}
+	if linked.ToNonAD() == owner {
+		return legacyPath, nil
+	}
+	return accountPath, nil
 }
 
 func incomingText(event *events.Message) string {

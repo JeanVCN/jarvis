@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"go.mau.fi/whatsmeow/types"
@@ -36,4 +39,35 @@ func TestSelfPromptOnlyFromConfiguredAccountChat(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAccountStoreSeparatesNumbersAndKeepsLegacyPairing(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	first := types.NewJID("5544999999999", types.DefaultUserServer)
+	second := types.NewJID("5544888888888", types.DefaultUserServer)
+	legacy := filepath.Join(dir, "device.db")
+	db, err := sql.Open("sqlite3", legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	check := func(owner types.JID, want string) {
+		t.Helper()
+		got, err := accountStorePath(ctx, dir, owner)
+		if err != nil || got != filepath.Join(dir, want) {
+			t.Fatalf("got %q, %v; want %q", got, err, want)
+		}
+	}
+	check(first, "device-"+first.User+".db")
+	if _, err := db.Exec("CREATE TABLE whatsmeow_device (jid TEXT PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO whatsmeow_device (jid) VALUES (?)", first.String()); err != nil {
+		t.Fatal(err)
+	}
+	check(first, "device.db")
+	check(second, "device-"+second.User+".db")
+	check(first, "device.db")
 }

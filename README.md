@@ -426,9 +426,15 @@ essa marca para evitar loops.
 O modelo segue o padrão do perfil Codex. Para selecionar outro modelo
 elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. Cada mensagem
 é um turno independente, sem histórico do canal. O SQLite guarda as
-credenciais do dispositivo vinculado para reconectar. O `whatsmeow`
+credenciais do dispositivo vinculado para reconectar. Para parear outra
+conta, execute o mesmo comando com o novo número em `JARVIS_WHATSAPP_OWNER` e escaneie o QR nessa conta. Cada número tem
+seu próprio pareamento. Ao voltar ao número anterior, o Jarvis reutiliza o
+vínculo, se ainda estiver ativo. O `whatsmeow`
 é uma integração não oficial, sujeita a desconexão ou restrição de conta.
-O teste com uma conta real continua pendente.
+O canal usa conexões de saída para WhatsApp e GPT. Para trocar mensagens,
+basta o processo estar rodando no notebook com internet. Tailscale fica
+para o acesso remoto à interface web e ao `/code`. O teste com uma conta
+real continua pendente.
 
 ## 🛠️ Tools
 
