@@ -750,3 +750,19 @@ Status: aceita. Texto e alternância implementados, piloto real pendente.
   Aprovações do OpenCode seguem sob controle local.
 - Histórico compartilhado e notas de voz serão evoluídos após a primeira
   validação do transporte. Ver o plano e os critérios em [ROADMAP.md](ROADMAP.md).
+
+
+### 2026-11-16 - Comando de IoT local por mensagem
+
+Status: planejada.
+
+- Separar conversa, código e atuação em dispositivos. `/cmd` ou invocação
+  de voz seleciona IoT apenas para a mensagem atual e preserva o modo
+  `/code`. STT local identifica a invocação antes de qualquer envio remoto.
+- Ollama pode propor uma ação de um catálogo fechado. O Core autoriza a
+  conta, resolve o dispositivo, valida os parâmetros e aplica a política de
+  confirmação antes de executar. GPT, OpenCode e conteúdo lido de imagens
+  ficam sem acesso a esse executor.
+- A interpretação fica no notebook. A comunicação com o dispositivo depende
+  do conector residencial escolhido. A trilha A0–A5 mantém a validação real
+  de pareamento, permissões e transporte do dispositivo.

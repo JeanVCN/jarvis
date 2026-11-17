@@ -6,8 +6,8 @@ Este arquivo deve ser atualizado quando funcionalidades forem concluidas, inicia
 
 ## Prioridade atual — Jarvis pessoal no WhatsApp
 
-**Objetivo.** Conversar com o Jarvis e delegar tarefas ao OpenCode no chat
-**Você** do próprio número. O Jarvis continua sendo uma implementação própria,
+**Objetivo.** Conversar com o Jarvis, delegar tarefas ao OpenCode e acionar
+dispositivos autorizados no chat **Você** do próprio número. O Jarvis continua sendo uma implementação própria,
 voltada ao uso pessoal. OpenClaw e Talon são referências. Uma eventual
 integração para a empresa é uma avaliação separada.
 
@@ -61,10 +61,51 @@ real ainda está pendente.
   por texto. No modo normal, uma invocação explícita no começo da fala, como
   “OpenCode, roda os testes”, encaminha só aquela tarefa. Se o destino ficar
   ambíguo ou a transcrição falhar, confirmar o destino ou pedir outro áudio.
-  O modo persistente muda somente com o `/code` digitado.
+  O modo persistente muda somente com o `/code` digitado. Detectar intenções
+  de IoT com transcrição local antes de considerar qualquer provedor remoto.
+  Se o áudio não puder ser classificado localmente, pedir um comando escrito
+  ou outro áudio.
 - Resposta em nota de voz fica para o chat normal. As permissões de execução
   do OpenCode continuam valendo para tarefas ditadas. Validar com gravações
   reais em português antes de escolher STT/TTS.
+
+### Imagens — proposta para o chat normal
+
+- Receber foto com legenda e responder à pergunta sobre a imagem. Começar
+  avaliando OCR local quando a tarefa for extrair texto. Comparar um modelo
+  visual local compatível com o notebook com uma opção multimodal remota,
+  sujeita à escolha explícita de enviar a imagem. O adaptador atual do
+  WhatsApp só encaminha texto.
+- Validar tipo, tamanho e dimensões antes de processar. Manter imagens
+  temporárias fora do histórico por padrão. Texto lido da imagem é conteúdo da
+  conversa. QR, OCR e instruções dentro da imagem nunca acionam dispositivos.
+  Anexos para OpenCode ficam para uma etapa própria.
+
+### Ações locais — `/cmd` de um único turno
+
+- `/cmd ligar a luz da sala` ou uma invocação explícita no início da nota de
+  voz, como “Jarvis, comando: ligar a luz da sala”, seleciona o caminho de IoT
+  para aquela mensagem. A frase exata deve ser validada com gravações reais.
+  O comando tem precedência sobre o modo de texto atual e, ao terminar,
+  preserva o modo anterior.
+- Usar correspondência direta para comandos configurados e Ollama local
+  quando precisar interpretar linguagem natural. A saída é apenas uma
+  proposta estruturada de ação, com dispositivo, operação e parâmetros.
+  O áudio, a transcrição e a resolução de IoT permanecem fora do GPT e do
+  OpenCode. Uma falha no STT ou no Ollama não redireciona o pedido.
+- O Core valida a conta pareada autorizada para IoT, resolve o apelido para
+  um dispositivo cadastrado e checa a operação e os parâmetros permitidos.
+  Recusa ações fora do catálogo e pede esclarecimento para destino ambíguo.
+  O executor aceita somente operações tipadas já configuradas.
+- Começar com consulta de estado e ação explícita de ligar/desligar uma
+  lâmpada cadastrada. Exigir confirmação separada para operações de maior
+  impacto. Vincular a confirmação à conta, à ação exata e à validade do
+  pedido. Registrar execução e resultado, deduplicar pelo ID da mensagem
+  e consultar o estado após timeout antes de decidir sobre nova tentativa.
+- Testar primeiro com executor simulado. Verificar que perguntas comuns,
+  saídas de modelos, imagens, mensagens duplicadas e contas sem autorização
+  de IoT jamais atuam sobre dispositivos. O piloto físico depende da ponte
+  residencial e das permissões do dispositivo. Ver fases A0–A5.
 
 ## Avaliação de prontidão da interface web — 2026-11-16
 

@@ -177,6 +177,19 @@ configurado nela. A API do Core, o frontend e o Tailscale são independentes
 do canal WhatsApp. Etapas futuras de histórico e voz estão no
 [roadmap](ROADMAP.md#prioridade-atual--jarvis-pessoal-no-whatsapp).
 
+### Entradas planejadas e fronteira de atuação
+
+As notas de voz passam por STT local para identificar o destino. A invocação
+de IoT, digitada como `/cmd` ou falada explicitamente, seleciona o catálogo
+local para um único turno. Comandos exatos podem ser resolvidos diretamente,
+e o Ollama local pode interpretar linguagem natural em formato estruturado.
+A proposta passa pela autorização de conta e pela validação de dispositivo,
+operação e parâmetros no Core antes de chegar ao executor físico. GPT e
+OpenCode continuam com suas rotas próprias e sem autoridade para chamar esse
+executor. O módulo de imagens pertence ao chat normal e trata conteúdo
+extraído como dados, sem interpretá-lo como comandos de atuação.
+
+
 ## Documentação das fases anteriores
 
 ## Estrutura Atual
