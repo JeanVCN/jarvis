@@ -294,12 +294,16 @@ func run(ctx context.Context) error {
 				parts[len(parts)-1] += "\n\n*OpenCode*"
 			}
 			var sendErr error
-			for _, part := range parts {
+			for partIndex, part := range parts {
 				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 				messageID := client.GenerateMessageID()
 				_, sendErr = routesDB.ExecContext(sendCtx, "INSERT OR IGNORE INTO jarvis_assistant_message_ids (message_id) VALUES (?)", string(messageID))
 				if sendErr == nil {
-					_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(part)}, whatsmeow.SendRequestExtra{ID: messageID})
+					outgoing := &waE2E.Message{Conversation: proto.String(part)}
+					if partIndex == 0 {
+						outgoing = quotedWhatsAppReply(part, event)
+					}
+					_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), outgoing, whatsmeow.SendRequestExtra{ID: messageID})
 				}
 				cancel()
 				if sendErr != nil {
@@ -313,6 +317,29 @@ func run(ctx context.Context) error {
 				log.Print("Falha ao enviar resposta no WhatsApp")
 			}
 		}
+	}
+}
+
+func quotedWhatsAppReply(text string, event *events.Message) *waE2E.Message {
+	if event == nil || event.Message == nil || event.Info.ID == "" {
+		return &waE2E.Message{Conversation: proto.String(text)}
+	}
+
+	chat := event.Info.Chat.ToNonAD()
+	contextInfo := &waE2E.ContextInfo{
+		StanzaID:      proto.String(string(event.Info.ID)),
+		RemoteJID:     proto.String(chat.String()),
+		QuotedMessage: event.Message,
+	}
+	sender := event.Info.Sender.ToNonAD()
+	if !sender.IsEmpty() {
+		contextInfo.Participant = proto.String(sender.String())
+	}
+	return &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text:        proto.String(text),
+			ContextInfo: contextInfo,
+		},
 	}
 }
 

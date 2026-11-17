@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSelfPromptOnlyFromConfiguredAccountChat(t *testing.T) {
@@ -50,6 +53,52 @@ func TestRedactedJIDLogDoesNotExposeFullUser(t *testing.T) {
 	}
 	if !strings.Contains(got, "user_len=11") || !strings.Contains(got, "user_suffix=34") || !strings.Contains(got, "server=\"s.whatsapp.net\"") {
 		t.Fatalf("log is missing useful redacted metadata: %q", got)
+	}
+}
+
+func TestQuotedWhatsAppReplyReferencesOriginalSelfChatMessage(t *testing.T) {
+	chat := types.NewJID("15550001234", types.DefaultUserServer)
+	sender := types.NewJID("15550001234", types.DefaultUserServer)
+	event := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: sender, IsFromMe: true},
+			ID:            types.MessageID("original-message"),
+		},
+		Message: &waE2E.Message{Conversation: proto.String("pergunta original")},
+	}
+
+	reply := quotedWhatsAppReply("resposta do Jarvis", event)
+	if reply.GetExtendedTextMessage() == nil {
+		t.Fatal("quoted reply should use an extended text message")
+	}
+	if reply.GetExtendedTextMessage().GetText() != "resposta do Jarvis" {
+		t.Fatalf("reply text = %q", reply.GetExtendedTextMessage().GetText())
+	}
+	contextInfo := reply.GetExtendedTextMessage().GetContextInfo()
+	if contextInfo.GetStanzaID() != "original-message" {
+		t.Fatalf("quoted stanza ID = %q", contextInfo.GetStanzaID())
+	}
+	if contextInfo.GetRemoteJID() != chat.String() {
+		t.Fatalf("quoted remote JID = %q", contextInfo.GetRemoteJID())
+	}
+	if contextInfo.GetParticipant() != sender.String() {
+		t.Fatalf("quoted participant = %q", contextInfo.GetParticipant())
+	}
+	if contextInfo.GetQuotedMessage().GetConversation() != "pergunta original" {
+		t.Fatalf("quoted message = %q", contextInfo.GetQuotedMessage().GetConversation())
+	}
+}
+
+func TestQuotedWhatsAppReplyFallsBackWithoutMessageReference(t *testing.T) {
+	for _, event := range []*events.Message{
+		nil,
+		{},
+		{Message: &waE2E.Message{Conversation: proto.String("original")}},
+	} {
+		reply := quotedWhatsAppReply("resposta", event)
+		if reply.GetConversation() != "resposta" || reply.GetExtendedTextMessage() != nil {
+			t.Fatalf("reply without quote reference = %#v", reply)
+		}
 	}
 }
 
