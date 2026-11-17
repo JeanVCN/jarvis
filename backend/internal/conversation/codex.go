@@ -181,6 +181,9 @@ func (p Codex) stream(ctx context.Context, messages []Message, imageMIME string,
 		if threadID != "" {
 			method = "thread/resume"
 			params["threadId"] = threadID
+			// The thread history stays in Codex's store and is not needed in
+			// this resume response; avoid returning a potentially large payload.
+			params["excludeTurns"] = true
 			delete(params, "ephemeral")
 		} else {
 			delete(params, "threadId")
