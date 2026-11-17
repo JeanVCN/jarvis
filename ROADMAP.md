@@ -48,6 +48,26 @@ para verificar o aviso e a ausência de fallback. Alternar de volta e confirmar
 a resposta normal do GPT. Build e testes simulados já passaram. Este piloto
 real ainda está pendente.
 
+### Disponibilidade contínua no notebook Linux — planejada
+
+- A meta é manter o Jarvis e o canal WhatsApp acessíveis com a sessão do Linux
+  bloqueada e o display apagado. O computador precisa continuar acordado e com
+  acesso à internet; suspensão real pausa processos e rede e não faz parte dessa
+  meta.
+- No projeto, substituir a dependência de terminais abertos por unidades
+  `systemd` para os processos necessários, com início automático, reinício em
+  falha, logs no journal e execução sob o usuário do Jarvis. Cobrir separadamente
+  o canal WhatsApp e o conjunto Core/bridge/frontend, para permitir ligar apenas
+  os serviços necessários.
+- Na máquina, configurar a política de energia para apagar o display e manter o
+  sistema acordado enquanto estiver conectado à tomada. Fechar a tampa só deve
+  ser considerado depois de configurar e validar que isso não suspende o host.
+  Em bateria, a autonomia de 24 horas não é garantida.
+- Critério de saída: bloquear a sessão, deixar o display apagar, reiniciar o
+  notebook e confirmar que os serviços iniciam e reconectam sem abrir sessão
+  gráfica ou terminal. Confirmar uso baixo de CPU/rede em repouso, internet e
+  Tailscale estáveis e recuperação do WhatsApp após queda temporária de rede.
+
 ### 2. Histórico e memória — thread inicial implementada; validar no piloto
 
 - O WhatsApp mantém o histórico visível e canônico do chat. Não copiar o texto
