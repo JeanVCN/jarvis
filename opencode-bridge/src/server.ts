@@ -11,6 +11,7 @@ const writeEnabled = process.env.JARVIS_OPENCODE_WRITE_ENABLED === "true";
 const projects = loadAllowedProjects(process.env.JARVIS_OPENCODE_PROJECTS);
 const maxImageBytes = 10 * 1024 * 1024;
 const maxImagePromptBodyBytes = 15 * 1024 * 1024;
+const maxFormAnswerBodyBytes = 32 * 1024;
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("JARVIS_OPENCODE_BRIDGE_PORT must be a valid TCP port");
@@ -331,7 +332,7 @@ const server = createServer(async (request, response) => {
     }
     let body: unknown;
     try {
-      body = await readBody(request);
+      body = await readBody(request, maxFormAnswerBodyBytes);
     } catch (error) {
       json(response, error instanceof Error && error.message === "request_too_large" ? 413 : 400, { error: "invalid_request" });
       return;
