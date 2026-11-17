@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.mau.fi/whatsmeow/types"
@@ -38,6 +39,17 @@ func TestSelfPromptOnlyFromConfiguredAccountChat(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestRedactedJIDLogDoesNotExposeFullUser(t *testing.T) {
+	jid := types.NewJID("15550001234", types.DefaultUserServer)
+	got := redactedJIDForLog(jid)
+	if strings.Contains(got, jid.User) {
+		t.Fatalf("log contains full JID user: %q", got)
+	}
+	if !strings.Contains(got, "user_len=11") || !strings.Contains(got, "user_suffix=34") || !strings.Contains(got, "server=\"s.whatsapp.net\"") {
+		t.Fatalf("log is missing useful redacted metadata: %q", got)
 	}
 }
 

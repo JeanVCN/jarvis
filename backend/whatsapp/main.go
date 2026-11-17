@@ -134,10 +134,18 @@ func run(ctx context.Context) error {
 	client.EnableAutoReconnect = true
 	client.ManualHistorySyncDownload = true
 	client.PrePairCallback = func(jid types.JID, _, _ string) bool {
-		if jid.ToNonAD() == owner {
+		received := jid.ToNonAD()
+		expected := owner.ToNonAD()
+		if received == expected {
 			return true
 		}
-		log.Print("QR recusado: a conta não corresponde a JARVIS_WHATSAPP_OWNER")
+		log.Printf(
+			"QR recusado: conta incompatível com JARVIS_WHATSAPP_OWNER (esperado: %s; recebido: %s; user_match=%t; server_match=%t)",
+			redactedJIDForLog(expected),
+			redactedJIDForLog(received),
+			received.User == expected.User,
+			received.Server == expected.Server,
+		)
 		return false
 	}
 	defer client.Disconnect()
@@ -306,6 +314,17 @@ func run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// redactedJIDForLog keeps pairing diagnostics useful without writing a full
+// phone number or LID to persistent service logs.
+func redactedJIDForLog(jid types.JID) string {
+	user := jid.User
+	suffix := strings.Repeat("*", len(user))
+	if len(suffix) > 2 {
+		suffix = user[len(user)-2:]
+	}
+	return fmt.Sprintf("user_len=%d,user_suffix=%s,server=%q", len(user), suffix, jid.Server)
 }
 
 type whatsappThreadStore struct{ db *sql.DB }
