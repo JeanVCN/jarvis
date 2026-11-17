@@ -540,8 +540,8 @@ compatibilidade confirmada. Não iniciar A2/A3 se A1 falhar.
 
 ## WhatsApp — primeira etapa de texto
 
-- Implementado como processo opcional em `backend/whatsapp`, via `whatsmeow`. O modo `self` recebe comandos `/jarvis` no chat consigo mesmo. O modo `contact` recebe texto de um único remetente autorizado na conta secundária.
-- Nesta etapa, cada mensagem é processada isoladamente pelo adaptador Ollama existente. A deduplicação é limitada à execução atual. O SQLite guarda estado do dispositivo vinculado para reconectar após reinício.
+- Implementado em `backend/whatsapp` via `whatsmeow`, usando apenas o chat consigo mesmo da conta que corresponde ao número configurado. Texto comum aciona a resposta e a marca `Jarvis:` evita loops.
+- Cada mensagem é processada isoladamente pelo GPT no perfil autenticado do Codex. A deduplicação é limitada à execução atual. O SQLite guarda o estado do dispositivo vinculado.
 - Próximo teste: parear a conta escolhida e confirmar recebimento e envio na instalação real. A integração não oficial está sujeita a desconexões e mudanças do WhatsApp.
 - Segunda etapa: definir vínculo com o histórico e a memória do Jarvis de maneira independente do número usado. Mensagens de voz e avaliação da Cloud API oficial ficam para depois.
 

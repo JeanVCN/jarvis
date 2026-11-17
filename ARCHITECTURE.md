@@ -159,8 +159,9 @@ e [comandos](https://developers.home.google.com/apis/android/device/control).
 ## Canal opcional de texto via WhatsApp
 
 `backend/whatsapp` é um processo separado com seu próprio módulo Go. Ele
-recebe eventos via dispositivo vinculado, filtra a conversa autorizada e usa
-`internal/ai.OllamaProvider` para responder ao texto. A ligação com o
+recebe eventos via dispositivo vinculado, filtra o chat consigo mesmo do
+número configurado e usa o adaptador Codex App Server de
+`internal/conversation` em modo de texto. A ligação com o
 PostgreSQL e com as sessões de conversa do Core fica para a etapa de histórico.
 O SQLite local guarda o pareamento do dispositivo. O canal não abre portas
 de entrada no host.

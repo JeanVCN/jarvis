@@ -14,8 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jean/jarvis/backend/internal/ai"
-	"github.com/jean/jarvis/backend/internal/config"
+	"github.com/jean/jarvis/backend/internal/conversation"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -25,6 +24,8 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
+
+const replyPrefix = "Jarvis: "
 
 var phoneNumber = regexp.MustCompile(`^[1-9][0-9]{7,14}$`)
 
@@ -37,19 +38,15 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	mode := os.Getenv("JARVIS_WHATSAPP_MODE")
-	var owner types.JID
-	switch mode {
-	case "self":
-		// The linked account is the only identity allowed in this mode.
-	case "contact":
-		number := strings.TrimPrefix(strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OWNER")), "+")
-		if !phoneNumber.MatchString(number) {
-			return fmt.Errorf("defina JARVIS_WHATSAPP_OWNER com o número autorizado, incluindo país e DDD")
-		}
-		owner = types.NewJID(number, types.DefaultUserServer)
-	default:
-		return fmt.Errorf("defina JARVIS_WHATSAPP_MODE=self ou contact")
+	number := strings.TrimPrefix(strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OWNER")), "+")
+	if !phoneNumber.MatchString(number) {
+		return fmt.Errorf("defina JARVIS_WHATSAPP_OWNER com o número autorizado, incluindo país e DDD")
+	}
+	owner := types.NewJID(number, types.DefaultUserServer)
+
+	provider, err := conversation.NewCodexText(os.Getenv("JARVIS_WHATSAPP_MODEL"))
+	if err != nil {
+		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
 	}
 
 	dir, err := os.UserConfigDir()
@@ -83,6 +80,9 @@ func run(ctx context.Context) error {
 	device, err := store.GetFirstDevice(ctx)
 	if err != nil {
 		return fmt.Errorf("load WhatsApp device: %w", err)
+	}
+	if device.ID != nil && device.GetJID().ToNonAD() != owner {
+		return fmt.Errorf("a conta vinculada não corresponde a JARVIS_WHATSAPP_OWNER")
 	}
 	client := whatsmeow.NewClient(device, nil)
 	client.EnableAutoReconnect = true
@@ -126,6 +126,9 @@ func run(ctx context.Context) error {
 				fmt.Println("Na conta escolhida, abra Aparelhos conectados e escaneie este QR:")
 				qrterminal.GenerateHalfBlock(item.Code, qrterminal.L, os.Stdout)
 			case "success":
+				if device.GetJID().ToNonAD() != owner {
+					return fmt.Errorf("a conta vinculada não corresponde a JARVIS_WHATSAPP_OWNER")
+				}
 				log.Print("Conta do Jarvis vinculada")
 			default:
 				return fmt.Errorf("pareamento do WhatsApp: %s", item.Event)
@@ -135,8 +138,6 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	cfg := config.Load()
-	llm := ai.NewOllamaProvider(cfg.OllamaURL, cfg.OllamaModel)
 	seen := make(map[types.MessageID]struct{})
 	recent := make([]types.MessageID, 0, 512)
 	for {
@@ -146,13 +147,7 @@ func run(ctx context.Context) error {
 		case <-loggedOut:
 			return fmt.Errorf("o WhatsApp desvinculou o Jarvis; inicie o processo novamente para parear")
 		case event := <-incoming:
-			source := event.Info.MessageSource
-			prompt := incomingText(event)
-			if mode == "self" {
-				prompt = selfPrompt(source, device.GetJID(), device.GetLID(), prompt)
-			} else if source.IsFromMe || !authorized(ctx, device.LIDs, source, owner) {
-				continue
-			}
+			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
 			if prompt == "" {
 				continue
 			}
@@ -169,17 +164,10 @@ func run(ctx context.Context) error {
 			recent = append(recent, id)
 
 			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			reply, err := llm.Chat(replyCtx, prompt)
+			reply := generateReply(replyCtx, provider, prompt)
 			cancel()
-			if err != nil {
-				log.Print("Ollama não respondeu à mensagem do WhatsApp")
-				reply = "Não consegui gerar uma resposta agora. Tente novamente daqui a pouco."
-			}
-			if mode == "self" {
-				reply = "Jarvis: " + reply
-			}
 			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			_, err = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(reply)})
+			_, err := client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
 			cancel()
 			if err != nil {
 				log.Print("Falha ao enviar resposta no WhatsApp")
@@ -201,40 +189,45 @@ func incomingText(event *events.Message) string {
 	return body
 }
 
-func selfPrompt(source types.MessageSource, ownPhone, ownLID types.JID, body string) string {
-	if !source.IsFromMe || source.IsGroup {
+func selfPrompt(source types.MessageSource, owner, ownPhone, ownLID types.JID, body string) string {
+	if !source.IsFromMe || source.IsGroup || ownPhone.ToNonAD() != owner {
 		return ""
 	}
 	chat := source.Chat.ToNonAD()
 	if chat.IsEmpty() || (chat != ownPhone.ToNonAD() && chat != ownLID.ToNonAD()) {
 		return ""
 	}
-	const prefix = "/jarvis "
-	if !strings.HasPrefix(body, prefix) {
+	// Replies can also arrive as events from the linked account. Never feed
+	// our own output back into inference, including after a restart.
+	if strings.HasPrefix(body, replyPrefix) {
 		return ""
 	}
-	return strings.TrimSpace(strings.TrimPrefix(body, prefix))
+	return body
 }
 
-type lidLookup interface {
-	GetPNForLID(context.Context, types.JID) (types.JID, error)
-}
-
-func authorized(ctx context.Context, lookup lidLookup, source types.MessageSource, owner types.JID) bool {
-	sender := source.Sender.ToNonAD()
-	if source.Chat.ToNonAD() != sender {
-		return false
+func generateReply(ctx context.Context, provider conversation.Provider, prompt string) string {
+	var response strings.Builder
+	calls, err := provider.Stream(ctx, []conversation.Message{{Role: "user", Content: prompt}}, func(delta string) error {
+		response.WriteString(delta)
+		return nil
+	})
+	reply := strings.TrimSpace(response.String())
+	if err == nil && len(calls) == 0 && reply != "" {
+		return reply
 	}
-	switch sender.Server {
-	case types.DefaultUserServer:
-		return sender == owner
-	case types.HiddenUserServer:
-		if source.SenderAlt.ToNonAD() == owner {
-			return true
+	if err == nil && len(calls) > 0 {
+		return "Por enquanto, só respondo por texto neste chat."
+	}
+	if failure, ok := err.(*conversation.Failure); ok {
+		switch failure.Code {
+		case "chatgpt_login_required", "authentication_required":
+			return "O GPT precisa que você entre novamente no ChatGPT no perfil Codex do Jarvis."
+		case "quota_exhausted":
+			return "O limite de uso do GPT foi atingido. Tente mais tarde."
+		case "model_unavailable":
+			return "O modelo GPT configurado está indisponível para esta conta."
 		}
-		pn, err := lookup.GetPNForLID(ctx, sender)
-		return err == nil && pn.ToNonAD() == owner
-	default:
-		return false
 	}
+	log.Print("GPT indisponível para responder à mensagem do WhatsApp")
+	return "Não consegui obter uma resposta do GPT agora. Tente novamente daqui a pouco."
 }
