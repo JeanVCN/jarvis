@@ -110,8 +110,11 @@ def run(args):
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
     try:
-        commands = [([LOCAL / "jarvis-api"], ROOT), ([PY, "-m", "jarvis_voice_agent.continuous"], ROOT), (["npm", "run", "start", "--", "--hostname", "127.0.0.1", "--port", frontend_port], ROOT / "frontend")]
-        if env.get("JARVIS_OPENCODE_BRIDGE_ENABLED") == "true":
+        commands = [([LOCAL / "jarvis-api"], ROOT)]
+        if not args.no_voice_agent:
+            commands.append(([PY, "-m", "jarvis_voice_agent.continuous"], ROOT))
+        commands.append((["npm", "run", "start", "--", "--hostname", "127.0.0.1", "--port", frontend_port], ROOT / "frontend"))
+        if env.get("JARVIS_OPENCODE_BRIDGE_ENABLED") == "true" and not args.external_opencode_bridge:
             commands.append((["npm", "run", "dev"], ROOT / "opencode-bridge"))
         for cmd, cwd in commands:
             procs.append(subprocess.Popen([str(x) for x in cmd], cwd=cwd, env=env, start_new_session=True))
@@ -158,6 +161,9 @@ def main():
         p.add_argument("--turn",choices=["silence","smart"],default="silence")
         p.add_argument("--llm",choices=["scripted","groq","codex","ollama"],default="scripted")
         p.add_argument("--model",default="")
+        if name == "run":
+            p.add_argument("--no-voice-agent",action="store_true",help="inicia Core e frontend sem o agente de voz contínua")
+            p.add_argument("--external-opencode-bridge",action="store_true",help="não inicia outro bridge; use uma unidade systemd separada")
         p.add_argument("--synthetic",action="store_true")
     args=parser.parse_args()
     {"setup": setup,"run": lambda:run(args),"prepare": lambda:prepare(args),"doctor":lambda:doctor(args)}[args.action]()

@@ -482,6 +482,81 @@ basta o processo estar rodando no notebook com internet. Tailscale fica
 para o acesso remoto à interface web e ao `/code`. O teste com uma conta
 real continua pendente.
 
+### Manter o Jarvis rodando no Linux
+
+O QR do primeiro pareamento ainda aparece no terminal do processo WhatsApp; a
+interface web não tem onboarding de pareamento. Faça esse pareamento uma vez
+com `go run .` e, depois de ver `WhatsApp conectado`, encerre o processo. Evite
+parear através do journal do systemd: o QR é uma credencial temporária e pode
+ficar retido nos logs.
+
+```sh
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5544111111111 \
+  JARVIS_CODEX_ENABLED=true JARVIS_CODEX_HOME="$HOME/.codex" go run .
+```
+
+Depois instale os serviços de usuário. O instalador compila um binário para cada
+número e prepara unidades que iniciam no login, reiniciam após falha e enviam
+logs ao journal. Ele não inicia nem habilita serviços automaticamente.
+
+```sh
+python3 scripts/install-systemd-user.py --owner 5544111111111
+```
+
+Para habilitar também o bridge OpenCode e o site/Core sem captura contínua de
+voz, instale as dependências e compile frontend e bridge antes:
+
+```sh
+cd frontend
+npm ci && npm run build
+cd ../opencode-bridge
+npm ci && npm run build
+cd ..
+python3 scripts/install-systemd-user.py \
+  --owner 5544111111111 --with-opencode-bridge --with-web
+```
+
+Revise `~/.config/jarvis/whatsapp-NUMERO.env` e, se usar `/code`, configure
+`~/.config/jarvis/opencode-bridge.env` com a allowlist JSON `JARVIS_OPENCODE_PROJECTS`,
+`JARVIS_OPENCODE_BRIDGE_ENABLED=true` e `JARVIS_OPENCODE_WRITE_ENABLED=false`
+até a validação local. O instalador gera
+o token interno do bridge com permissões `0600`; o serviço WhatsApp recebe esse
+mesmo token. O ID de projeto usado pela instância fica em
+`JARVIS_WHATSAPP_OPENCODE_PROJECT` no arquivo dela. O perfil Codex padrão é
+`~/.codex`; se usar outro, informe `JARVIS_CODEX_HOME` no env file da instância.
+Esses arquivos são locais e não devem ser commitados.
+
+Exemplo da allowlist (ajuste o caminho absoluto; mantenha a linha do token que
+o instalador gerou):
+
+```ini
+JARVIS_OPENCODE_PROJECTS="[{\"id\":\"jarvis\",\"name\":\"Jarvis\",\"directory\":\"/home/usuario/jarvis\"}]"
+JARVIS_OPENCODE_BRIDGE_ENABLED=true
+JARVIS_OPENCODE_WRITE_ENABLED=false
+```
+
+Habilite somente os serviços que for usar:
+
+```sh
+systemctl --user enable --now jarvis-whatsapp@5544111111111.service
+systemctl --user enable --now jarvis-opencode-bridge.service
+systemctl --user enable --now jarvis-web.service
+```
+
+Pareamento, canal WhatsApp, bridge, Core e frontend podem ser consultados com
+`systemctl --user status` e `journalctl --user -u NOME-DO-SERVICO`. Para iniciar
+os serviços no boot antes de abrir a sessão gráfica, habilite o *linger* do
+usuário uma vez com `loginctl enable-linger SEU-USUARIO`. A configuração de
+energia do host é separada: bloqueie a sessão, deixe o display apagar e mantenha
+o notebook acordado na tomada. Os units não bloqueiam suspensão.
+
+O unit web usa `scripts/jarvis run --no-voice-agent`, reduzindo trabalho em
+repouso. O serviço WhatsApp sozinho não precisa do Core/frontend; `/code`
+precisa do bridge. Depois de atualizar o checkout, rode novamente o instalador
+para recompilar os binários e atualizar os units. A instalação e o teste em um
+Linux de usuário ainda precisam ser validados no notebook-alvo.
+
 As respostas convertem títulos, listas, links, negrito, itálico, tachado,
 blocos de código e tabelas para formas mais legíveis no Markdown do WhatsApp.
 Respostas extensas são divididas em mensagens menores, preservando blocos de
