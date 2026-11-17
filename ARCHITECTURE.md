@@ -175,8 +175,9 @@ e [comandos](https://developers.home.google.com/apis/android/device/control).
 `backend/whatsapp` é um processo Go independente. O dispositivo vinculado
 via `whatsmeow` recebe eventos por uma conexão de saída. A entrada aceita
 apenas o chat **Você** da conta pareada cujo número coincide com a
-configuração. O processo envia as respostas pela mesma conexão, com marca
-`Jarvis:` para evitar respostas em loop.
+configuração. As respostas seguem sem prefixo no modo GPT; em `/code`, a última
+parte termina com `*OpenCode*`. O SQLite guarda IDs das mensagens enviadas para
+filtrar ecos sem depender de texto visível nem duplicar o conteúdo.
 
 | Entrada | Destino |
 |---|---|

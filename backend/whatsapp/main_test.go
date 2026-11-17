@@ -25,7 +25,7 @@ func TestSelfPromptOnlyFromConfiguredAccountChat(t *testing.T) {
 	}{
 		{"own phone chat", ownPhone, ownPhone, true, false, "Olá", "Olá"},
 		{"own LID chat", ownLID, ownPhone, true, false, "Olá", "Olá"},
-		{"bot reply", ownPhone, ownPhone, true, false, replyPrefix + "Olá", ""},
+		{"assistant-looking text is ordinary input", ownPhone, ownPhone, true, false, "Jarvis: Olá", "Jarvis: Olá"},
 		{"outbound to someone else", otherPhone, ownPhone, true, false, "Olá", ""},
 		{"message from another account", ownPhone, ownPhone, false, false, "Olá", ""},
 		{"wrong linked account", otherPhone, otherPhone, true, false, "Olá", ""},

@@ -56,8 +56,26 @@ func (r messageRouter) init(ctx context.Context) error {
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			thread_id TEXT NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS jarvis_assistant_message_ids (
+			message_id TEXT PRIMARY KEY
+		);
 	`)
 	return err
+}
+
+func (r messageRouter) codeMode(ctx context.Context) (bool, error) {
+	var code bool
+	err := r.db.QueryRowContext(ctx, "SELECT code FROM jarvis_route WHERE id = 1").Scan(&code)
+	return code, err
+}
+
+func isAssistantMessageID(ctx context.Context, db *sql.DB, id string) (bool, error) {
+	var exists int
+	err := db.QueryRowContext(ctx, "SELECT 1 FROM jarvis_assistant_message_ids WHERE message_id = ?", id).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (r messageRouter) reply(ctx context.Context, id, text string) (string, error) {

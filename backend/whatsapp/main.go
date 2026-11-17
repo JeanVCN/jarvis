@@ -32,8 +32,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const replyPrefix = "Jarvis: "
-
 var phoneNumber = regexp.MustCompile(`^[1-9][0-9]{7,14}$`)
 
 func main() {
@@ -88,7 +86,6 @@ func run(ctx context.Context) error {
 	}
 	defer routesDB.Close()
 	assistantName := whatsappAssistantName(os.Getenv("JARVIS_WHATSAPP_NAME"))
-	replyPrefix := assistantName + ": "
 	persona := strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_PERSONA"))
 	if persona == "" {
 		persona = fmt.Sprintf("Você é %s, assistente pessoal do usuário. Fale em português brasileiro, com tom natural, cordial e respostas concisas. Ajude com dúvidas e tarefas cotidianas. Considere o histórico desta conversa para manter continuidade. Não use ferramentas, arquivos, comandos ou rede; não afirme ter executado ações externas. Use Markdown padrão quando útil; a resposta será adaptada para o WhatsApp.", assistantName)
@@ -162,6 +159,14 @@ func run(ctx context.Context) error {
 			if !isSelfChatSource(event.Info.MessageSource, owner, device.GetJID(), device.GetLID()) {
 				return
 			}
+			assistantMessage, err := isAssistantMessageID(ctx, routesDB, string(event.Info.ID))
+			if err != nil {
+				stopRouting(fmt.Errorf("verificar mensagem enviada pelo Jarvis: %w", err))
+				return
+			}
+			if assistantMessage {
+				return
+			}
 			if incomingText(event) == "" && !isVoiceNote(event) && !isImageMessage(event) {
 				return
 			}
@@ -210,7 +215,7 @@ func run(ctx context.Context) error {
 				return context.Cause(ctx)
 			}
 			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			prompt := selfPromptWithPrefix(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event), replyPrefix)
+			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
 			isImage := isImageMessage(event)
 			isVoice := !isImage && prompt == "" && isVoiceNote(event)
 			transcriptionFailed := false
@@ -262,6 +267,10 @@ func run(ctx context.Context) error {
 			} else {
 				reply, routeErr = router.reply(replyCtx, string(event.Info.ID), prompt)
 			}
+			codeMode, modeErr := router.codeMode(replyCtx)
+			if routeErr == nil && modeErr != nil {
+				routeErr = modeErr
+			}
 			clear(imageData)
 			cancel()
 			if routeErr != nil {
@@ -271,10 +280,17 @@ func run(ctx context.Context) error {
 				continue
 			}
 			parts := splitWhatsAppMessage(formatWhatsAppMarkdown(reply), 12*1024-160)
+			if codeMode && len(parts) > 0 {
+				parts[len(parts)-1] += "\n\n*OpenCode*"
+			}
 			var sendErr error
 			for _, part := range parts {
 				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-				_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + part)})
+				messageID := client.GenerateMessageID()
+				_, sendErr = routesDB.ExecContext(sendCtx, "INSERT OR IGNORE INTO jarvis_assistant_message_ids (message_id) VALUES (?)", string(messageID))
+				if sendErr == nil {
+					_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(part)}, whatsmeow.SendRequestExtra{ID: messageID})
+				}
 				cancel()
 				if sendErr != nil {
 					break
@@ -451,16 +467,7 @@ func incomingText(event *events.Message) string {
 }
 
 func selfPrompt(source types.MessageSource, owner, ownPhone, ownLID types.JID, body string) string {
-	return selfPromptWithPrefix(source, owner, ownPhone, ownLID, body, replyPrefix)
-}
-
-func selfPromptWithPrefix(source types.MessageSource, owner, ownPhone, ownLID types.JID, body, prefix string) string {
 	if !isSelfChatSource(source, owner, ownPhone, ownLID) {
-		return ""
-	}
-	// Replies can also arrive as events from the linked account. Never feed
-	// our own output back into inference, including after a restart.
-	if strings.HasPrefix(body, prefix) {
 		return ""
 	}
 	return body

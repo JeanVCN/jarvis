@@ -420,9 +420,10 @@ JARVIS_WHATSAPP_OWNER=5544XXXXXXXXX go run .
 Use o número do aparelho que será vinculado, com país e DDD. Em **Aparelhos
 conectados**, escaneie o QR nessa conta. Espere aparecer `WhatsApp conectado`
 e mande texto comum no chat **Você**. Só esse chat do número configurado
-recebe resposta. Cada resposta começa com o nome configurado em
-`JARVIS_WHATSAPP_NAME` (padrão `Jarvis:`); essa marca também impede que a
-resposta do próprio assistente seja processada de novo.
+recebe resposta. O nome configurado em `JARVIS_WHATSAPP_NAME` (padrão
+`Jarvis`) orienta a personalidade, mas não aparece como prefixo. As respostas
+no modo normal ficam sem rótulo; no modo `/code`, a última parte termina com
+`*OpenCode*`.
 
 O modelo segue o padrão do perfil Codex. Para selecionar outro modelo
 elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. O chat normal mantém
@@ -484,7 +485,9 @@ real continua pendente.
 As respostas convertem títulos, listas, links, negrito, itálico, tachado,
 blocos de código e tabelas para formas mais legíveis no Markdown do WhatsApp.
 Respostas extensas são divididas em mensagens menores, preservando blocos de
-código entre partes.
+código entre partes. Os IDs de mensagens enviadas pelo Jarvis são guardados
+para que eventos de eco não voltem à conversa; o conteúdo das respostas não é
+duplicado no SQLite.
 
 ### OpenCode no chat Você
 

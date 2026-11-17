@@ -832,6 +832,9 @@ Decisão:
 - Converter Markdown comum (títulos, listas, ênfase, links, tabelas e código)
   para o formato de WhatsApp e fragmentar respostas extensas em mensagens
   menores com os blocos de código balanceados.
+- Manter respostas do modo GPT sem rótulo visível. No modo OpenCode, anexar
+  `*OpenCode*` somente ao final da última parte. Filtrar mensagens ecoadas pelo
+  ID gerado para cada envio e persistir apenas esse ID, sem prefixo no texto.
 
 Impacto:
 
