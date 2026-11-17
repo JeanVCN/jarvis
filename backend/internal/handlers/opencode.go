@@ -299,10 +299,17 @@ func RegisterOpenCode(router *gin.Engine, client *opencode.Client, store opencod
 			cancel()
 			if lookupErr == nil && created != nil {
 				persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if store.AcceptSession(persistCtx, link.ID, created.ID, created.Title) == nil {
-					link, _ = store.Session(c.Request.Context(), link.ID)
-				}
+				err = store.AcceptSession(persistCtx, link.ID, created.ID, created.Title)
 				persistCancel()
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable"})
+					return
+				}
+				link, err = store.Session(c.Request.Context(), link.ID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable"})
+					return
+				}
 			}
 		}
 		var detail *opencode.SessionDetail
