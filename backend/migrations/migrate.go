@@ -53,5 +53,11 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, e = tx.Exec(ctx, "UPDATE conversation_tools SET status='uncertain' WHERE status='claimed'"); e != nil {
 		return e
 	}
+	if _, e = tx.Exec(ctx, "UPDATE opencode_operations SET state='uncertain',updated_at=now() WHERE state='submitting'"); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(ctx, "UPDATE opencode_sessions SET state='uncertain',updated_at=now() WHERE state='creating'"); e != nil {
+		return e
+	}
 	return tx.Commit(ctx)
 }

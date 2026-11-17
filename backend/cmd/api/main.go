@@ -24,10 +24,10 @@ import (
 func main() {
 	cfg := config.Load()
 	var opencodeClient *opencode.Client
+	if cfg.OpenCodeWriteEnabled && !cfg.OpenCodeBridgeEnabled {
+		log.Fatal("OpenCode writes require the local bridge to be enabled")
+	}
 	if cfg.OpenCodeBridgeEnabled {
-		if os.Getenv("JARVIS_AUTH_REQUIRED") != "true" || len(os.Getenv("JARVIS_AUTH_PASSWORD")) < 12 || len(os.Getenv("JARVIS_AUTH_SECRET")) < 32 {
-			log.Fatal("OpenCode bridge requires Jarvis authentication with a 12+ character password and 32+ byte secret")
-		}
 		var err error
 		opencodeClient, err = opencode.NewClient(cfg.OpenCodeBridgeURL, cfg.OpenCodeBridgeToken)
 		if err != nil {
@@ -70,7 +70,7 @@ func main() {
 
 	router := handlers.NewRouter(db, chatService, toolService, voiceService, cfg.CORSAllowedOrigin)
 	if opencodeClient != nil {
-		handlers.RegisterOpenCode(router, opencodeClient)
+		handlers.RegisterOpenCode(router, opencodeClient, opencode.Store{Pool: db.Pool()}, cfg.OpenCodeWriteEnabled)
 	}
 
 	conversation.Register(router, conversation.Store{Pool: db.Pool()}, toolService)

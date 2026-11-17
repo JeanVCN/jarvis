@@ -13,7 +13,7 @@ permite continuar sessões e responder a pedidos de aprovação.
 
 Decisão de direção: **integrar o OpenCode V2 como executor de tarefas de código;
 não construir um harness completo próprio nesta etapa**. O Jarvis continua sendo
-a interface, a identidade, o orquestrador e o registro da delegação. Isso não
+a interface, o orquestrador e o registro da delegação. Isso não
 pressupõe que OpenCode controle genericamente janelas ou qualquer aplicativo do
 desktop.
 
@@ -22,63 +22,66 @@ desktop.
 - Jarvis tem Core Go, frontend Next.js, agente de voz Python, conversas/eventos e
   journal no PostgreSQL. `/api/v2` atualmente autoriza somente `time` e
   `calculator`; ferramentas de sistema ficam bloqueadas por padrão.
-- O Core não autentica usuário final. O frontend tem login opcional
-  `JARVIS_AUTH_REQUIRED=true`, validado no proxy Next para páginas e requests
-  same-origin; o Core não valida o cookie. Mantenha Core/backend em loopback e
-  acessível pelo navegador via frontend. Compose publica portas em localhost;
-  teste por proxy privado/Tailscale ainda pendente.
+- O Core não autentica usuário final. **O login Jarvis não faz parte do objetivo
+  atual e não deve ser requisito para usar o app.** O acesso web deve
+  ficar limitado à máquina local ou à tailnet, com Core/backend em loopback e
+  acessível pelo navegador via frontend. O controle de acesso por dispositivo na
+  tailnet ainda precisa ser configurado e validado.
 - OpenCode V2 fornece API de sessões, mensagens, eventos, diff e permissões, além
   de `@opencode/client` TypeScript e serviço local. Eventos do cliente são ao vivo,
   sem replay/reconexão automática; após desconexão, o Jarvis deverá consultar o
   estado persistido da sessão.
-- Protótipo C1 implementado em `opencode-bridge`: Node/TypeScript com
+- Integração implementada em `opencode-bridge`: Node/TypeScript com
   `@opencode/client` 2.2.7, bind loopback, bearer token e allowlist explícita.
-  Validação read-only conectou ao serviço local OpenCode 2.2.7. Lista projetos e
-  metadados de sessões; não retorna mensagens nem envia prompts. Core oferece
-  endpoints GET opt-in e a tela `/code` apresenta status/projetos/sessões. Nenhuma
-  delegação ou acesso pelo telefone foi validado.
+  Rotas read e write estão ligadas ao Core/UI; escrita exige
+  `JARVIS_OPENCODE_WRITE_ENABLED=true` e fica false por padrão. Os contratos
+  foram testados com mocks; validação com OpenCode real e acesso pelo telefone
+  ainda não foram feitos.
 
-### Fase C0 — escopo, autenticação e conectividade privada
+### Fase C0 — acesso privado sem login Jarvis
 
-Estado: fundação de login implementada; configuração e validação atrás do proxy
-privado ainda pendentes. Continua bloqueando qualquer envio pelo celular.
+Estado: o login Jarvis foi removido e a rede privada é a fronteira de acesso
+escolhida; configuração e validação por dispositivo ainda pendentes.
 
 - Confirmar OpenCode V2 e requisitos de instalação/serviço no computador-alvo.
-- Definir acesso do celular exclusivamente pela rede privada (Tailscale/tailnet
-  ou alternativa aprovada), sem expor API do OpenCode diretamente à internet.
-- Implementado: autenticação opcional do Jarvis no proxy Next, sessão segura do
-  navegador, proteção de mutações/origem e limites básicos. CORS/tailnet não
-  substituem autenticação da aplicação; o Core não verifica a sessão do usuário.
-- Detalhes implementados: login de usuário único por senha de ambiente, cookie HMAC
-  `HttpOnly`/`SameSite=Strict` com validade de 12 h, logout, limite local de
-  tentativas, verificação de origem em mutações e proteção das páginas/API do
-  frontend. Exige senha de 12+ caracteres e segredo aleatório de 32+ bytes quando
-  `JARVIS_AUTH_REQUIRED=true`; permanece desativado por padrão em uso local.
-- Testado em servidor Next local: redirecionamento anônimo, 401 de API, login
-  correto, senha errada, rejeição de origem cruzada e logout. Ainda validar via
-  Tailscale Serve/reverse proxy com cookies `Secure` habilitados.
+- Restringir a interface web à máquina local e à tailnet. No acesso remoto, usar
+  Tailscale Serve/reverse proxy para encaminhar ao frontend local; não publicar
+  frontend, Core ou bridge na internet.
+- Configurar grants/ACLs para os dispositivos escolhidos e confirmar na prática
+  que um dispositivo autorizado conecta e outro dispositivo da tailnet não
+  conecta. Não assumir que pertencer à mesma tailnet, por si só, seleciona um
+  dispositivo específico.
+- Implementado: o app não tem tela/rotas de login e o script/Core habilitam o
+  bridge sem credenciais de usuário. O Core não autentica usuário; mantenha Core
+  e bridge em loopback e não os exponha diretamente ao navegador/dispositivo.
+- Para o futuro app Android/probe, não criar conta Jarvis nem tela de login.
+  Antes de permitir chamadas remotas ao Core, definir pareamento por instalação
+  com chave mantida no Android Keystore, revogação e autorização no servidor.
+  OAuth/consentimento Google Home, se necessário para as Home APIs, é separado e
+  não equivale a uma conta Jarvis.
 - Implementado no bridge: lista explícita `JARVIS_OPENCODE_PROJECTS`, caminhos
   canônicos e IDs resolvidos no servidor; nenhum path é aceito do navegador.
 - Implementado para o fluxo host do script: bridge OpenCode e Core ficam em
   loopback e usam bearer token interno. A implantação pelo Compose não habilita
   o bridge; a topologia de proxy privado ainda não foi testada.
 
-Critério de saída: celular acessa Jarvis autenticado pela rede privada; API do
-OpenCode não fica exposta ao celular nem a uma interface pública.
+Critério de saída: somente dispositivos explicitamente permitidos alcançam a
+interface Jarvis pela rede privada; o app não pede login Jarvis; Core e OpenCode
+permanecem fora do acesso direto do cliente.
 
 ### Fase C1 — contrato e adaptador OpenCode
 
-Estado: fatia read-only integrada ao Core/UI; testes unitários e validação local
-do bridge passaram. Falta validar o fluxo completo script→Core→frontend e
-reconexão. A escrita continua bloqueada até desenho de persistência, reconciliação
-e política de permissões; C0 de acesso móvel continua pendente.
+Estado: adaptador read/write integrado; build e testes com mocks passaram. Falta
+validar o fluxo script→Core→frontend e o contrato contra OpenCode 2.2.7 real.
+Mantenha `JARVIS_OPENCODE_WRITE_ENABLED=false` até C0 e as verificações reais de
+permissão, ID de prompt e reconciliação estarem concluídas.
 
 - Implementado: adaptador TypeScript estreito usando `@opencode/client` e serviço
   OpenCode local. O Core Go não executa shell nem recebe credenciais dos
   provedores de IA.
-- Expor ao Core apenas operações necessárias: listar projetos/sessões autorizados,
-  criar sessão, enviar prompt/continuação, ler estado/mensagens/diff, interromper
-  sessão e consultar/responder a pedidos de permissão.
+- Implementado: listar projetos/sessões, criar sessão, enviar prompt, ler estado/
+  mensagens/diff e responder pedidos de permissão com `once`/`reject`. Interrupção
+  ainda pendente.
 - Não aceitar caminho livre. O servidor resolve identificadores de projeto para
   diretórios previamente cadastrados.
 - Estado da implantação: processo bridge separado, iniciado opcionalmente pelo
@@ -86,60 +89,61 @@ e política de permissões; C0 de acesso móvel continua pendente.
   continuam sem validação. SDK embutido não foi escolhido.
 - Versionar o contrato Jarvis↔adaptador e tratar indisponibilidade, timeout,
   respostas inválidas e versões incompatíveis.
-- Protótipo atual valida OpenCode `2.x` via `Service.discover`, faz bind em
+- Adaptador valida OpenCode `2.x` via `Service.discover`, faz bind em
   `127.0.0.1`, exige token interno de pelo menos 32 bytes e aceita somente
-  projetos configurados em `JARVIS_OPENCODE_PROJECTS`; detalhes em
-  `opencode-bridge/README.md`. Nenhuma rota de prompt/criação de sessão existe.
-- Core só registra GET `/api/opencode/status`, `/projects` e
-  `/projects/:project/sessions` quando `JARVIS_OPENCODE_BRIDGE_ENABLED=true`; exige
-  variáveis de autenticação Jarvis configuradas no startup, URL loopback e token
-  interno. Isso não autentica requests diretamente no Core: o controle de usuário
-  está no proxy Next e o Core deve permanecer fora do alcance remoto. `/code` mostra
-  dados sem diretórios locais nem conteúdo de mensagens. Compose não ativa o bridge;
-  o fluxo suportado nesta fase é `scripts/jarvis` no host.
+  projetos configurados em `JARVIS_OPENCODE_PROJECTS`. Core valida URL loopback e
+  token interno; isso não autentica requests diretamente no Core. O Core deve
+  permanecer fora do alcance remoto. Compose não ativa o bridge; o fluxo atual é
+  `scripts/jarvis` no host.
+- Bridge esconde reasoning, payloads de ferramenta e paths absolutos; limita texto
+  e diff. Toda sessão recebida é revalidada contra o diretório canônico do projeto.
+- Escrita fica desligada por padrão. Sessões novas pedem `ask` para ferramentas;
+  a UI oferece somente `once` e `reject`, nunca `always`.
 - Investigação do contrato V2 registrada em `docs/opencode-integration.md`:
   prompt retorna item de inbox (não conclusão); mensagens têm cursor; permissões
-  suportam `once`/`always`/`reject`. Nenhuma escrita foi habilitada. Próximo passo:
-  testar semântica de permissões/idempotência e desenhar persistência/reconciliação
-  antes de expor criação de sessão ou prompt.
+  suportam `once`/`always`/`reject`. Semântica de permissões efetivas e do campo
+  `id` ainda precisa de validação no servidor local.
 
 Critério de saída: testes de contrato comprovam isolamento entre projeto/sessão,
 validação de entrada, falhas e cancelamento, sem executar comandos reais.
 
 ### Fase C2 — delegação e retorno no Jarvis
 
-Estado: não iniciada; depende de contrato C1 completo e das verificações de
-permissão/idempotência descritas em `docs/opencode-integration.md`.
+Estado: primeira versão implementada e desligada por padrão; qualificação real
+depende de C0 e dos testes de contrato C1 no computador-alvo.
 
-- Permitir selecionar projeto e iniciar uma sessão OpenCode pela interface Jarvis.
-- Persistir vínculo entre conversa/usuário Jarvis, projeto permitido e sessão
-  OpenCode; guardar status e dados necessários para recuperar a visualização sem
-  duplicar todo o histórico do executor.
-- Exibir prompt enviado, status, resposta final, erros, alterações e resumo/lista
-  de arquivos alterados. O Jarvis só marca concluído após confirmar o estado final
-  da sessão OpenCode.
-- Permitir novos prompts na mesma sessão, preservando contexto de trabalho.
-- Tratar envio com resposta perdida como resultado incerto; não criar sessão nem
-  reenviar prompt automaticamente sem reconciliar com OpenCode.
+- Implementado: selecionar projeto, criar sessão OpenCode e enviar texto pela UI.
+- Implementado: migrations aditivas guardam vínculo projeto/sessão e journal de
+  operações `submitting`, `accepted`, `running`, `completed`, `failed` e
+  `uncertain`; a tentativa é persistida antes da chamada externa.
+- Implementado: mostrar respostas textuais e diffs limitados, continuar sessão,
+  acompanhar por consulta e reconciliar após reconexão. Não copia todo o histórico
+  do OpenCode para o PostgreSQL.
+- Implementado: timeout/crash não repete prompt nem sessão automaticamente. O
+  usuário pode consultar/reconciliar; IDs repetidos com payload diferente geram
+  conflito.
+- Validar em OpenCode real o retorno de `session.prompt`, `message.list` e os
+  limites de reconciliação antes de habilitar o flag de escrita.
 
 Critério de saída: tarefa de teste iniciada no Jarvis aparece como sessão
 persistente, retorna resposta/diff e aceita continuação sem abrir outra interface.
 
 ### Fase C3 — eventos, reconexão e aprovações
 
-Estado: planejada; depende de C2.
+Estado: aprovações únicas/rejeição e polling/reconciliação básicos implementados;
+stream de eventos e interrupção ainda pendentes.
 
 - Usar eventos ao vivo para atualização de baixa latência, mas consultar mensagens,
   estado e diff da API após reconexão; não tratar stream como log durável.
 - Implementar parada/interrupção explícita e comunicar que cancelar não desfaz
   efeitos já concluídos.
-- Mostrar pedidos de permissão com ação/recurso compreensíveis e permitir somente
-  decisões explícitas. Começar com “permitir uma vez” ou “rejeitar”; deixar
-  aprovações recorrentes para decisão posterior.
-- Aplicar configuração conservadora no OpenCode: pedir aprovação para shell e
-  alterações conforme política escolhida; negar ações explicitamente proibidas.
-- Registrar no Jarvis delegação, transições e decisão de aprovação sem registrar
-  tokens/segredos. A execução do shell continua tendo autoridade do usuário local;
+- Implementado: mostrar pedidos de permissão e oferecer somente “permitir uma
+  vez” ou “rejeitar”; `always` não existe na UI/API Jarvis.
+- Implementado: armazenar decisão e operação antes da resposta ao OpenCode. A
+  sessão nova solicita aprovação (`ask`) para ferramentas.
+- Pendência: validar a política efetiva contra configuração global do OpenCode,
+  implementar interrupção explícita e adicionar eventos ao vivo.
+- A execução do shell continua tendo autoridade do usuário local;
   permissões do agente não são sandbox do sistema operacional.
 
 Critério de saída: aprovações aguardam decisão, rejeições persistem, reconexão
@@ -159,10 +163,38 @@ Estado: planejada; depende de C0–C3.
 Critério de saída: usuário consegue iniciar e continuar tarefa de código pelo
 celular, acompanhar o resultado e autorizar/negar ações sem contornar o Jarvis.
 
+### Ordem recomendada para concluir OpenCode
+
+1. **C0, acesso e configuração:** login Jarvis e sua dependência do bridge foram
+   removidos. Configurar Tailscale Serve e regras por dispositivo, mantendo
+   frontend como única entrada remota e Core/bridge/OpenCode em loopback.
+2. **C1, leitura ponta a ponta:** verificar serviço OpenCode, script, Core e
+   `/code` no computador-alvo; conferir allowlist, reconexão e falhas de serviço.
+   Fazer também a prova de acesso pela tailnet e de bloqueio por um dispositivo
+   não autorizado.
+3. **C1, contrato de escrita:** concluir as verificações de propriedade de
+   sessão, permissões e prompt incerto descritas em
+   `docs/opencode-integration.md`. Usar serviço simulado para testes automáticos;
+   sem prompt real até preparar um projeto descartável e autorizar a prova.
+4. **C2, qualificação da escrita:** habilitar o flag só na máquina-alvo após C0 e
+   testar sessão, aprovação única/rejeição, resposta/diff e recuperação em projeto
+   descartável; não usar projeto com segredos para essa prova.
+5. **C3, robustez:** implementar interrupção, stream de eventos e reconciliar
+   permissões incertas; preservar a regra de nunca repetir tarefa sem confirmação.
+6. **C4, celular:** validar telefone em Wi-Fi e fora de casa via Tailscale, perda
+   de rede, reinício do app e revogação/bloqueio de dispositivo.
+
+Restrição de custo: orçamento incremental **R$ 0**. Não configurar chave de API
+com cobrança, fallback pago, serviço hospedado pago ou compra de hardware. Para
+inferência, usar somente uma conta/provedor que o usuário já tenha e cujo uso
+esteja coberto pelo plano; limites e disponibilidade devem ser tratados como
+variáveis e não como garantia.
+
 ### Não objetivos desta entrega
 
 - Construir um harness/loop de agente, executor de shell, snapshots e sistema de
   permissões completos do zero.
+- Criar contas, login ou senha próprios do Jarvis para o usuário nesta etapa.
 - Controlar genericamente mouse, teclado, janelas ou qualquer aplicativo gráfico.
 - Expor OpenCode diretamente à internet, automatizar aprovações ou permitir
   diretórios arbitrários.
@@ -431,8 +463,8 @@ compatibilidade confirmada. Não iniciar A2/A3 se A1 falhar.
 - Agentes autonomos com limites de seguranca.
 - Suporte a OpenAI.
 - Suporte a Gemini.
-- Acesso remoto via Tailscale.
-- Autenticacao para acesso remoto.
+- Acesso remoto pela tailnet, limitado aos dispositivos escolhidos; sem login
+  Jarvis no fluxo atual.
 - Interface responsiva otimizada para celular.
 - Painel de configuracoes do assistente.
 - Historico de conversas e busca em memoria.
@@ -446,7 +478,8 @@ compatibilidade confirmada. Não iniciar A2/A3 se A1 falhar.
 - `voice` batch depende de binarios/modelos locais configurados por env vars e usa o fluxo de chat existente.
 - `voice-agent` depende do Jarvis Core via `POST /api/chat/stream`; transporte realtime deve permanecer desacoplado de tools e comandos diretos.
 - UI de chat final depende de historico e modelo de conversa; a tela atual valida a integracao inicial com streaming.
-- Acesso remoto depende de autenticacao e configuracao segura de rede.
+- Acesso remoto depende de regras de rede privada e autorização dos dispositivos;
+  não de conta ou senha Jarvis.
 
 ## Modulos Desenvolviveis em Paralelo
 

@@ -1,8 +1,25 @@
 # Contrato de integração Jarvis ↔ OpenCode
 
-Estado: investigação do SDK `@opencode/client` 2.2.7; **nenhuma operação de
-escrita foi habilitada**. Este documento registra os limites que devem orientar
-a próxima fatia C2.
+Estado: integração local read/write implementada atrás de opção explícita;
+**não foi executada tarefa real no OpenCode neste ambiente**. Este documento
+registra os limites que devem orientar a qualificação no computador-alvo.
+
+## Fronteira de acesso escolhida
+
+- Não haverá login/conta Jarvis no fluxo atual. A UI web será acessível na
+  máquina local ou por Tailscale, com regras de rede limitadas aos dispositivos
+  autorizados. Validar essas regras com um dispositivo permitido e outro negado;
+  não presumir que todos os membros da tailnet devem acessar o serviço.
+- O frontend é a única entrada remota. Core, bridge e serviço OpenCode ficam em
+  loopback; não publicar suas portas nem adicionar CORS amplo. O bearer token
+  entre Core e bridge é credencial interna e não substitui a fronteira da rede.
+- O app Android futuro não terá login Jarvis. Antes de conceder acesso remoto,
+  parear cada instalação por chave privada no Android Keystore e permitir
+  revogação no servidor. O OAuth do Google Home, se usado, permanece uma
+  autorização separada para a conta/ecossistema Google.
+- Implementado: a tela/rotas de login foram removidas e script/Core já não exigem
+  credenciais de usuário para habilitar o bridge. O Core não autentica usuários;
+  mantenha-o isolado atrás do frontend e da rede privada.
 
 ## Operações confirmadas no cliente V2
 
@@ -20,7 +37,7 @@ a próxima fatia C2.
   aceita `once`, `always` ou `reject`; `always` pode salvar autorização e não
   deve ser oferecido como aprovação normal na UI móvel.
 
-## Contrato de segurança para escrita (a implementar)
+## Contrato de segurança para escrita implementado
 
 1. A entrada do navegador usa somente IDs Jarvis allowlisted e texto simples
    limitado em tamanho. Não aceitar `directory`, URL de arquivo, anexos, agente,
@@ -51,7 +68,7 @@ a próxima fatia C2.
    diff da sessão selecionada; não enviar reasoning, dados nativos do provedor,
    paths absolutos ou conteúdo de ferramenta sem uma decisão explícita de produto.
 
-## Próximas verificações antes de habilitar escrita
+## Verificações pendentes antes de habilitar escrita
 
 - Validar no OpenCode 2.2.7 as regras `permissions` em sessão recém-criada e como
   wildcard `ask`/`deny` interage com configuração global e ferramentas.
@@ -61,5 +78,28 @@ a próxima fatia C2.
   implementar reconciliação e nunca retry automático.
 - Testar eventos, consultas persistidas, paginação, respostas vazias e sessão em
   execução/interrompida. Não fazer prompt de teste real sem confirmação explícita.
-- Adicionar persistência Jarvis para vínculo projeto↔sessão e operação de envio
-  antes de expor endpoint mutável no Core/UI.
+- A persistência do vínculo projeto↔sessão e do journal de operações está
+  implementada em migration aditiva. Validar crash/restart no computador-alvo.
+- O flag está desligado por padrão tanto no Core quanto no bridge. Não habilitar
+  até concluir as verificações acima em uma instalação real e projeto descartável.
+
+## Estado e sequência restante
+
+1. Login Jarvis e dependência de inicialização do bridge removidos. Manter
+   serviços internos em loopback; configurar Tailscale Serve e grants/ACLs por
+   dispositivo, testando acesso permitido e negado.
+2. Validar o fluxo `scripts/jarvis` → bridge → Core → `/code`, inclusive
+   indisponibilidade e reconexão, na máquina-alvo.
+3. Fechar os testes de contrato com OpenCode 2.2.7: permissões efetivas,
+   correlação/id do prompt, paginação, respostas vazias e reconciliação após
+   timeout/restart. Usar mocks onde possível. Qualquer tarefa real deve usar
+   projeto descartável e autorização explícita do usuário.
+4. Validar as regras Tailscale com um dispositivo autorizado e outro negado; o
+   serviço de desenvolvimento não foi executado por esta implementação.
+5. Depois da qualificação, avaliar eventos ao vivo, interrupção explícita e
+   resolução manual de operações incertas. Não repetir automaticamente nenhuma
+   operação cujo resultado permaneça desconhecido.
+
+Restrição de custo: orçamento incremental R$ 0. Não adicionar chave com cobrança
+por uso nem fallback pago. Usar apenas uma conta/provedor que o usuário já tenha
+e cujo uso esteja coberto pelo plano; não assumir cota ou disponibilidade.

@@ -1,9 +1,8 @@
 # Adaptador local OpenCode do Jarvis
 
-Protótipo inicial **somente leitura** da integração C1. O serviço usa o cliente
-oficial `@opencode/client` e descobre um serviço OpenCode V2 já em execução no
-computador. Ele não inicia o OpenCode e não oferece endpoint para prompt,
-comando, alteração de arquivo ou aprovação.
+Adaptador local da integração Jarvis ↔ OpenCode V2. O serviço usa o cliente
+oficial `@opencode/client` e descobre um serviço OpenCode já em execução no
+computador; nunca inicia nem encerra esse serviço.
 
 ## Segurança atual
 
@@ -14,8 +13,13 @@ comando, alteração de arquivo ou aprovação.
 - A API expõe somente status do serviço, nomes dos projetos configurados e
   metadados mínimos de sessões daquele projeto. Não retorna conteúdo de mensagens.
 - O Core Go consome o adaptador somente quando `JARVIS_OPENCODE_BRIDGE_ENABLED=true`;
-  a tela `/code` lista os dados pela API do Core. A autenticação do produto é
-  separada do bearer token interno do bridge.
+  a tela `/code` lista os dados pela API do Core. Não há login Jarvis; o bearer
+  token é somente interno entre Core e bridge e não deve ser tratado como login
+  do usuário.
+- Criação de sessões, prompts e decisões de permissão ficam desligados por padrão
+  e exigem `JARVIS_OPENCODE_WRITE_ENABLED=true` tanto no Core quanto no bridge.
+- Sessões usam a allowlist do projeto e pedem aprovação para todas as ferramentas.
+  O Jarvis só oferece `once` e `reject`; não oferece `always`.
 
 ## Configuração e execução manual
 
@@ -25,23 +29,23 @@ Use Node.js 20 ou superior. Gere um token local:
 python -c 'import secrets; print(secrets.token_urlsafe(32))'
 ```
 
-Configure `JARVIS_AUTH_REQUIRED=true`, senha/segredo do Jarvis, o token do bridge
-e a lista JSON de projetos no ambiente (não versione esses valores). O token do
+O bridge pode ser iniciado sem login de usuário. Restrinja o acesso remoto ao
+frontend pela tailnet; Core e bridge devem continuar em loopback. O token do
 bridge deve ser o mesmo em `JARVIS_OPENCODE_BRIDGE_TOKEN` do Core e do serviço:
 
 ```sh
 export JARVIS_OPENCODE_BRIDGE_TOKEN='token-gerado-acima'
 export JARVIS_OPENCODE_PROJECTS='[{"id":"jarvis","name":"Jarvis","directory":"/caminho/absoluto/para/jarvis"}]'
 export JARVIS_OPENCODE_BRIDGE_ENABLED=true
-export JARVIS_AUTH_REQUIRED=true
+# Deixe false até concluir a configuração privada e o teste com projeto descartável.
+export JARVIS_OPENCODE_WRITE_ENABLED=false
 npm ci --prefix opencode-bridge
 npm run build --prefix opencode-bridge
 python scripts/jarvis run --stt fixture --tts tone --llm scripted
 ```
 
-O `scripts/jarvis` inicia o adaptador opcionalmente junto do Core e frontend. Os
-segredos de autenticação Jarvis também precisam estar exportados. O bridge e as
-rotas Core ficam em loopback no fluxo do script.
+O `scripts/jarvis` inicia o adaptador opcionalmente junto do Core e frontend. O
+bridge e as rotas Core ficam em loopback no fluxo do script.
 
 O OpenCode V2 precisa estar instalado e com serviço local saudável. O adaptador
 procura uma versão `2.x`; não inicia nem encerra o serviço. Rotas:
@@ -51,14 +55,26 @@ procura uma versão `2.x`; não inicia nem encerra o serviço. Rotas:
 - `GET /v1/projects` — requer bearer token; allowlist sem diretórios.
 - `GET /v1/projects/{id}/sessions` — requer bearer token; até 50 sessões, sem
   mensagens ou paths.
+- `POST /v1/projects/{id}/sessions` — somente com escrita habilitada; cria uma
+  sessão com permissões `ask` e registra o ID da operação em metadados para
+  reconciliação.
+- `POST /v1/projects/{id}/sessions/{session}/prompts` — somente com escrita
+  habilitada; texto simples limitado a 8.000 caracteres. O serviço verifica o
+  diretório canônico da sessão antes de enviar.
+- `GET /v1/projects/{id}/sessions/{session}` — texto user/assistant, diff limitado
+  e pedidos pendentes; reasoning, payloads de ferramentas e paths absolutos são
+  removidos.
+- `GET /v1/projects/{id}/operations/{id}` — reconcilia criação de sessão por
+  metadados persistidos no OpenCode.
+- `POST /v1/projects/{id}/sessions/{session}/permissions/{request}/reply` — aceita
+  somente decisão `once` ou `reject`, após validar a sessão/projeto.
 
-Rotas read-only do Core: `GET /api/opencode/status`, `/api/opencode/projects` e
-`/api/opencode/projects/{id}/sessions`. Habilitá-las pelo script também exige
-`JARVIS_AUTH_REQUIRED=true` e os segredos de login configurados no startup. Isso
-é uma checagem de configuração: o Core não valida o cookie do usuário por request.
-O frontend Next aplica a sessão e encaminha as chamadas same-origin; mantenha a
-porta do Core inacessível ao cliente remoto. A UI está em `/code`; nenhum endpoint
-de prompt existe ainda.
+Rotas do Core: `GET /api/opencode/status`, `/projects`,
+`/projects/{id}/sessions`, `/projects/{id}/jarvis-sessions`, `/sessions/{id}`;
+POST para criar sessão, enviar prompt e responder à permissão. Escritas ficam
+desabilitadas sem `JARVIS_OPENCODE_WRITE_ENABLED=true` e todas são registradas
+antes do efeito externo. A porta do Core continua inacessível ao cliente remoto;
+use Tailscale para limitar quem alcança o frontend. A UI está em `/code`.
 
 ## Desenvolvimento
 

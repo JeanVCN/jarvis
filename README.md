@@ -61,40 +61,37 @@ GPT-6-Luna via OAuth isolado concluiu resposta e calculadora reais em 2026-11-14
 qualidade/latência de voz em dispositivo físico continuam sujeitas a validação.
 
 **Prioridade ativa:** concluir a fundação segura para acesso móvel e implementar
-delegação de tarefas ao OpenCode V2. Hoje o painel `/code` é somente leitura;
-criação de sessões e envio de prompts ainda não existem. A direção e as fases
-C0–C4 estão em
+delegação de tarefas ao OpenCode V2. O painel `/code` já oferece sessão/prompt
+quando o servidor habilita `JARVIS_OPENCODE_WRITE_ENABLED`; a opção permanece
+desligada por padrão. A direção e as fases C0–C4 estão em
 [`ROADMAP.md`](ROADMAP.md#prioridade-atual--integração-jarvis--opencode). A etapa
 residencial/Home APIs está pausada até o usuário ter Android; o probe compilado e
 seu estado estão registrados em [`docs/home-apis/README.md`](docs/home-apis/README.md).
 
-Já existe um adaptador local OpenCode read-only em `opencode-bridge`. Quando
-habilitado, o Core fornece status/projetos/sessões e a tela `/code` os apresenta.
-Ainda não envia tarefas nem conteúdo das respostas. A autenticação do Jarvis é
-pré-requisito para habilitar comandos remotos.
+Já existe um adaptador local OpenCode em `opencode-bridge`. O modo read-only lista
+status/projetos/sessões. O modo de escrita cria sessões, envia prompts, recupera
+respostas/diffs e aceita decisões `once`/`reject`; ele exige uma opção explícita
+no servidor e registra operações no PostgreSQL antes de chamar o executor. O app
+não tem conta ou login Jarvis; o acesso remoto é limitado à tailnet.
+O fluxo de escrita ainda é experimental: foi exercitado com mocks, mas aguarda
+validação contra OpenCode real e regras Tailscale por dispositivo antes do uso.
 
-### Acesso móvel protegido (fundação C0)
+### Acesso privado (fundação C0)
 
-O frontend agora oferece login opcional de usuário único e protege páginas e
-requests same-origin quando `JARVIS_AUTH_REQUIRED=true`. Esse controle fica no
-proxy Next: o Core Go não valida cookie de usuário. Mantenha as portas Core e
-bridge em loopback e não as exponha diretamente; o frontend encaminha as chamadas
-same-origin ao Core. Antes de publicar a interface
-por Tailscale Serve, configure `JARVIS_AUTH_PASSWORD` (12+ caracteres) e um
-`JARVIS_AUTH_SECRET` aleatório (32+ bytes); mantenha ambos apenas no ambiente ou
-em arquivo local ignorado pelo Git. Gere o segredo, por exemplo, com:
+O script executa frontend, Core e bridge em loopback. Para acesso remoto, publique
+somente o frontend na tailnet usando Tailscale Serve e configure a política da
+tailnet para permitir os dispositivos escolhidos. Exemplo no computador Jarvis:
 
 ```sh
-python -c 'import secrets; print(secrets.token_urlsafe(32))'
+tailscale serve --bg --https=443 http://127.0.0.1:13000
 ```
 
-Configure também `JARVIS_AUTH_COOKIE_SECURE=true`. O cookie de sessão é
-`HttpOnly`, `SameSite=Strict`, expira em 12 horas e a interface permite sair.
-Chamadas do browser usam a mesma origem do Jarvis; não configure URL de API como
-`127.0.0.1` para um cliente móvel. `scripts/jarvis run` valida os segredos quando
-a autenticação é exigida. Não habilite acesso remoto antes de configurar e testar
-o login. O controle de tentativas é local ao processo; não substitui proteção de
-rede/firewall nem gestão de segredos.
+Antes de usar, confirme que um dispositivo permitido conecta e que outro
+dispositivo não permitido recebe bloqueio. Não publique as portas do frontend,
+Core ou bridge na interface pública nem configure ACLs amplas para todos os
+membros da tailnet. O Core e o bridge não validam identidade de usuário; a
+fronteira de acesso é a rede privada. O app também valida `Origin` em requests
+que alteram dados.
 
 Ja existe:
 

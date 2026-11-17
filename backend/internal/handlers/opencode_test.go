@@ -25,7 +25,7 @@ func TestOpenCodeProjectsRouteDoesNotExposeDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := gin.New()
-	RegisterOpenCode(router, client)
+	RegisterOpenCode(router, client, opencode.Store{}, false)
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/opencode/projects", nil)
@@ -35,5 +35,24 @@ func TestOpenCodeProjectsRouteDoesNotExposeDirectories(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "directory") || strings.Contains(response.Body.String(), "/home/") {
 		t.Fatalf("response leaked a filesystem path: %s", response.Body.String())
+	}
+}
+
+func TestOpenCodeWritesStayDisabledUnlessExplicitlyEnabled(t *testing.T) {
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("disabled write reached bridge: %s %s", r.Method, r.URL.Path)
+	}))
+	defer bridge.Close()
+	client, err := opencode.NewClient(bridge.URL, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	RegisterOpenCode(router, client, opencode.Store{}, false)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/opencode/projects/jarvis/sessions", strings.NewReader(`{"operation_id":"0123456789abcdef0123456789abcdef"}`))
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "opencode_write_disabled") {
+		t.Fatalf("unexpected response %d: %s", response.Code, response.Body.String())
 	}
 }
