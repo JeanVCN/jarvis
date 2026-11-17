@@ -200,13 +200,16 @@ func run(ctx context.Context) error {
 			}
 			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
-			transcriptErr := false
-			if prompt == "" && isVoiceNote(event) {
-				prompt, err = transcribeVoice(replyCtx, client, event, recognizer)
-				if err != nil {
+			isVoice := prompt == "" && isVoiceNote(event)
+			transcriptionFailed := false
+			if isVoice {
+				transcript, sttErr := transcribeVoice(replyCtx, client, event, recognizer)
+				if sttErr != nil {
 					log.Print("Não foi possível transcrever nota de voz com o STT local")
 					prompt = "Não consegui transcrever essa nota de voz localmente. Tente um áudio mais curto ou envie texto."
-					transcriptErr = true
+					transcriptionFailed = true
+				} else {
+					prompt = transcript
 				}
 			}
 			if prompt == "" {
@@ -214,22 +217,25 @@ func run(ctx context.Context) error {
 				continue
 			}
 			var reply string
-			if transcriptErr {
+			var routeErr error
+			if transcriptionFailed {
 				reply = prompt
+			} else if isVoice {
+				reply, routeErr = router.replyTranscription(replyCtx, string(event.Info.ID), prompt)
 			} else {
-				reply, err = router.reply(replyCtx, string(event.Info.ID), prompt)
+				reply, routeErr = router.reply(replyCtx, string(event.Info.ID), prompt)
 			}
 			cancel()
-			if err != nil {
-				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", err)
+			if routeErr != nil {
+				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", routeErr)
 			}
 			if reply == "" {
 				continue
 			}
 			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			_, err = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
+			_, sendErr := client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
 			cancel()
-			if err != nil {
+			if sendErr != nil {
 				if prompt == "/code" {
 					return fmt.Errorf("não consegui confirmar o modo pelo WhatsApp; roteamento interrompido")
 				}

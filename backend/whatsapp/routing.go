@@ -51,6 +51,16 @@ func (r messageRouter) init(ctx context.Context) error {
 }
 
 func (r messageRouter) reply(ctx context.Context, id, text string) (string, error) {
+	return r.replyWithModePolicy(ctx, id, text, true)
+}
+
+// A transcript follows the current route but can never switch it. Only a
+// typed message may toggle /code.
+func (r messageRouter) replyTranscription(ctx context.Context, id, text string) (string, error) {
+	return r.replyWithModePolicy(ctx, id, text, false)
+}
+
+func (r messageRouter) replyWithModePolicy(ctx context.Context, id, text string, allowModeToggle bool) (string, error) {
 	// Commit mode changes and deduplication together. Persist only routing
 	// metadata, so a replay cannot forward a code prompt to GPT.
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -66,7 +76,7 @@ func (r messageRouter) reply(ctx context.Context, id, text string) (string, erro
 	if err != nil || inserted == 0 {
 		return "", err
 	}
-	toggle := text == "/code"
+	toggle := allowModeToggle && text == "/code"
 	if toggle {
 		if _, err := tx.ExecContext(ctx, "UPDATE jarvis_route SET code = NOT code WHERE id = 1"); err != nil {
 			return "", err
