@@ -502,10 +502,16 @@ se necessário, `JARVIS_OPENCODE_BRIDGE_URL` com o endereço HTTP de loopback
 [bridge local do OpenCode](docs/opencode-integration.md) com a escrita
 habilitada para o ambiente de teste. O WhatsApp não precisa acessar o Core
 ou o frontend. Se o OpenCode ficar indisponível, a mensagem não segue para
-o GPT normal. Aprovações pendentes devem ser conferidas no OpenCode local.
-A troca de modo muda o destino de novos textos, sem cancelar tarefas já
-enviadas. Resultados e contexto são tratados pelo provedor configurado no
-próprio OpenCode.
+o GPT normal. Perguntas estruturadas do OpenCode chegam com o texto do agente,
+títulos, alternativas, descrições e a marca `Recommended` quando fornecida.
+Responda com o número da opção; texto que não seja um número é enviado como
+resposta personalizada. Formulários com vários campos aceitam valores na
+ordem, separados por ponto e vírgula. Para autorizações pendentes, use
+`/aprovar` ou `/rejeitar`; se houver mais de um pedido, acrescente o número,
+como `/aprovar 2`. A aprovação vale somente para a ação selecionada. A troca
+de modo muda o destino de novas mensagens, sem cancelar tarefas já enviadas.
+Resultados e contexto são tratados pelo provedor configurado no próprio
+OpenCode.
 
 ## 🛠️ Tools
 

@@ -113,6 +113,38 @@ export async function replyProjectPermission(
   await client.permission.reply({ sessionID, requestID, decision });
 }
 
+export async function replyProjectForm(
+  client: OpenCodeClient,
+  project: AllowedProject,
+  sessionID: string,
+  formID: string,
+  answer: Record<string, string | number | boolean | string[]>,
+): Promise<void> {
+  await assertSessionProject(client, project, sessionID);
+  const form = await client.session.form.get({ sessionID, formID });
+  if (form.id !== formID || form.sessionID !== sessionID || form.state.status !== "pending") {
+    throw new Error("form_not_pending");
+  }
+  const fields = new Map(form.fields.map((field) => [field.key, field]));
+  for (const [key, value] of Object.entries(answer)) {
+    const field = fields.get(key);
+    if (!field) throw new Error("invalid_form_answer");
+    const valid = field.type === "string"
+      ? typeof value === "string"
+      : field.type === "multiselect"
+        ? Array.isArray(value) && value.every((item) => typeof item === "string")
+        : field.type === "integer"
+          ? typeof value === "number" && Number.isInteger(value)
+          : field.type === "number"
+            ? typeof value === "number" && Number.isFinite(value)
+            : field.type === "boolean"
+              ? typeof value === "boolean"
+              : false;
+    if (!valid) throw new Error("invalid_form_answer");
+  }
+  await client.session.form.reply({ sessionID, formID, answer });
+}
+
 export async function interruptProjectSession(
   client: OpenCodeClient,
   project: AllowedProject,
@@ -129,10 +161,11 @@ export async function readProjectSession(
   sessionID: string,
 ) {
   const session = await assertSessionProject(client, project, sessionID);
-  const [messages, diff, permissions] = await Promise.all([
+  const [messages, diff, permissions, forms] = await Promise.all([
     client.message.list({ sessionID, limit: 100, order: "desc" }),
     client.session.diff({ sessionID }),
     client.permission.list({ sessionID }),
+    pendingProjectForms(client, sessionID),
   ]);
 
   const publicMessages = [...messages.data].reverse().flatMap((message) => {
@@ -187,5 +220,28 @@ export async function readProjectSession(
       resources: permission.resources.map(safeDiffPath),
       message: permission.message,
     })),
+    forms,
   };
+}
+
+async function pendingProjectForms(client: OpenCodeClient, sessionID: string) {
+  const forms = await client.session.form.list({ sessionID });
+  const details = await Promise.all(forms.map((form) => client.session.form.get({ sessionID, formID: form.id })));
+  return details.filter((form) => form.state.status === "pending").map((form) => ({
+    id: form.id,
+    title: form.title,
+    fields: form.fields.map((field) => ({
+      key: field.key,
+      title: "title" in field ? field.title : undefined,
+      description: "description" in field ? field.description : undefined,
+      type: field.type,
+      custom: "custom" in field ? field.custom ?? false : false,
+      options: "options" in field ? (field.options ?? []).map((option) => ({
+        value: option.value,
+        label: option.label,
+        description: option.description,
+        recommended: "recommended" in option && option.recommended === true,
+      })) : [],
+    })),
+  }));
 }

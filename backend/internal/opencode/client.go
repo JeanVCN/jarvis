@@ -71,12 +71,35 @@ type Permission struct {
 	Message   string   `json:"message,omitempty"`
 }
 
+type FormOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Recommended bool   `json:"recommended,omitempty"`
+}
+
+type FormField struct {
+	Key         string       `json:"key"`
+	Title       string       `json:"title,omitempty"`
+	Description string       `json:"description,omitempty"`
+	Type        string       `json:"type"`
+	Custom      bool         `json:"custom,omitempty"`
+	Options     []FormOption `json:"options,omitempty"`
+}
+
+type Form struct {
+	ID     string      `json:"id"`
+	Title  string      `json:"title"`
+	Fields []FormField `json:"fields"`
+}
+
 type SessionDetail struct {
 	Session     Session      `json:"session"`
 	State       string       `json:"state"`
 	Messages    []Message    `json:"messages"`
 	Diff        []DiffFile   `json:"diff"`
 	Permissions []Permission `json:"permissions"`
+	Forms       []Form       `json:"forms"`
 }
 
 type Client struct {
@@ -215,6 +238,16 @@ func (c *Client) ReplyPermission(ctx context.Context, projectID, sessionID, requ
 	}
 	body := map[string]string{"operation_id": operationID, "decision": decision}
 	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/permissions/" + url.PathEscape(requestID) + "/reply"
+	var result map[string]any
+	return c.post(ctx, path, body, &result)
+}
+
+func (c *Client) ReplyForm(ctx context.Context, projectID, sessionID, formID, operationID string, answer map[string]any) error {
+	if !projectIDPattern.MatchString(projectID) || sessionID == "" || formID == "" || !validOperationID(operationID) || len(answer) == 0 {
+		return errors.New("opencode_request_invalid")
+	}
+	body := map[string]any{"operation_id": operationID, "answer": answer}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/forms/" + url.PathEscape(formID) + "/reply"
 	var result map[string]any
 	return c.post(ctx, path, body, &result)
 }

@@ -24,6 +24,10 @@ integração para a empresa é uma avaliação separada.
   confirma a troca e guarda modo e vínculo de sessão por conta. O resultado
   volta pelo mesmo chat. A indisponibilidade do OpenCode mantém o modo ativo
   e gera um aviso. Nenhuma mensagem desse modo é redirecionada ao GPT normal.
+- Em `/code`, formulários de pergunta do OpenCode são apresentados com opções,
+  descrições e a marca `Recommended`; números escolhem a opção e texto livre
+  responde de forma personalizada. Pedidos de permissão podem ser respondidos
+  no WhatsApp com `/aprovar` ou `/rejeitar`, sem conceder `always`.
 - O canal usa conexões de saída e o bridge do OpenCode em loopback. O piloto
   pelo WhatsApp dispensa API pública, webhook, acesso remoto pela rede local
   e Tailscale. Tailscale fica como opção para o piloto separado da interface web.
@@ -35,8 +39,8 @@ integração para a empresa é uma avaliação separada.
 confirmar uma resposta do GPT autenticado e provar que outros chats e grupos
 são ignorados. Com OpenCode real rodando em loopback e um projeto descartável
 na allowlist, ativar `/code`, enviar uma tarefa, conferir o resultado e
-confirmar que as aprovações pendentes continuam sob controle local. Reiniciar
-o processo para verificar persistência do modo e da sessão. Desligar o bridge
+confirmar que perguntas e decisões `/aprovar`/`/rejeitar` retomam a mesma sessão.
+Reiniciar o processo para verificar persistência do modo e da sessão. Desligar o bridge
 para verificar o aviso e a ausência de fallback. Alternar de volta e confirmar
 a resposta normal do GPT. Build e testes simulados já passaram. Este piloto
 real ainda está pendente.

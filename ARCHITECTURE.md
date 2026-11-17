@@ -177,7 +177,10 @@ via `whatsmeow` recebe eventos por uma conexão de saída. A entrada aceita
 apenas o chat **Você** da conta pareada cujo número coincide com a
 configuração. As respostas seguem sem prefixo no modo GPT; em `/code`, a última
 parte termina com `*OpenCode*`. O SQLite guarda IDs das mensagens enviadas para
-filtrar ecos sem depender de texto visível nem duplicar o conteúdo.
+filtrar ecos sem depender de texto visível nem duplicar o conteúdo. No modo
+OpenCode, o bridge também encaminha formulários de pergunta e decisões de
+permissão ao chat WhatsApp: opções por número ou resposta personalizada;
+`/aprovar` e `/rejeitar` respondem somente a pedidos pendentes identificados.
 
 | Entrada | Destino |
 |---|---|

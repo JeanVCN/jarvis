@@ -835,6 +835,10 @@ Decisão:
 - Manter respostas do modo GPT sem rótulo visível. No modo OpenCode, anexar
   `*OpenCode*` somente ao final da última parte. Filtrar mensagens ecoadas pelo
   ID gerado para cada envio e persistir apenas esse ID, sem prefixo no texto.
+- Repassar pelo WhatsApp as perguntas estruturadas do OpenCode com títulos,
+  opções e descrições intactos; responder com número seleciona a opção e texto
+  livre preenche a resposta personalizada. Decidir permissões com `/aprovar`
+  ou `/rejeitar`, numerando quando houver vários pedidos; nunca expor `always`.
 
 Impacto:
 

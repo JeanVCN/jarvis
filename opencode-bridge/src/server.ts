@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { OpenCode } from "@opencode/client";
 import { Service } from "@opencode/client/service";
 import { loadAllowedProjects } from "./projects.js";
-import { createProjectSession, findCreatedSession, interruptProjectSession, readProjectSession, replyProjectPermission, sendProjectPrompt, validOperationID, type InlineImage } from "./workflow.js";
+import { createProjectSession, findCreatedSession, interruptProjectSession, readProjectSession, replyProjectForm, replyProjectPermission, sendProjectPrompt, validOperationID, type InlineImage } from "./workflow.js";
 
 const port = Number(process.env.JARVIS_OPENCODE_BRIDGE_PORT ?? "18110");
 const token = process.env.JARVIS_OPENCODE_BRIDGE_TOKEN ?? "";
@@ -98,6 +98,15 @@ function parseInlineImage(value: unknown): InlineImage | undefined {
 
 function projectByID(id: string) {
   return projects.find((project) => project.id === id);
+}
+
+function isFormAnswer(value: unknown): value is Record<string, string | number | boolean | string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length > 0 && entries.length <= 16 && entries.every(([, answer]) =>
+    typeof answer === "string" || typeof answer === "number" || typeof answer === "boolean" ||
+    (Array.isArray(answer) && answer.length <= 32 && answer.every((item) => typeof item === "string")),
+  );
 }
 
 const server = createServer(async (request, response) => {
@@ -302,6 +311,47 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       if (error instanceof Error && (error.message === "session_not_in_project" || error.message === "permission_not_pending")) {
         json(response, 404, { error: "permission_not_pending" });
+        return;
+      }
+      json(response, 502, { error: "opencode_request_failed" });
+    }
+    return;
+  }
+
+  const formMatch = url.pathname.match(/^\/v1\/projects\/([a-z0-9_-]+)\/sessions\/([^/]+)\/forms\/([^/]+)\/reply$/);
+  if (request.method === "POST" && formMatch) {
+    if (!writeEnabled) {
+      json(response, 403, { error: "opencode_write_disabled" });
+      return;
+    }
+    const project = projectByID(formMatch[1]);
+    if (!project) {
+      json(response, 404, { error: "project_not_found" });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readBody(request);
+    } catch (error) {
+      json(response, error instanceof Error && error.message === "request_too_large" ? 413 : 400, { error: "invalid_request" });
+      return;
+    }
+    const candidate = body && typeof body === "object" ? body as Record<string, unknown> : {};
+    if (!validOperationID(candidate.operation_id) || !isFormAnswer(candidate.answer)) {
+      json(response, 400, { error: "invalid_form_answer" });
+      return;
+    }
+    try {
+      const client = await openCodeClient();
+      if (!client) {
+        json(response, 503, { error: "opencode_unavailable" });
+        return;
+      }
+      await replyProjectForm(client, project, decodeURIComponent(formMatch[2]), decodeURIComponent(formMatch[3]), candidate.answer);
+      json(response, 200, { status: "completed" });
+    } catch (error) {
+      if (error instanceof Error && (error.message === "session_not_in_project" || error.message === "form_not_pending")) {
+        json(response, 404, { error: "form_not_pending" });
         return;
       }
       json(response, 502, { error: "opencode_request_failed" });
