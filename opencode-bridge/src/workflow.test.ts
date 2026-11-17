@@ -56,10 +56,31 @@ test("prompt rejects a session outside its allowlisted project before sending", 
   } as unknown as OpenCodeClient;
   try {
     await assert.rejects(
-      sendProjectPrompt(client, project(directory), "ses_foreign", operationID, "test"),
+      sendProjectPrompt(client, project(directory), "ses_foreign", "test"),
       /session_not_in_project/,
     );
     assert.equal(sent, false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prompt omits the Jarvis operation ID from OpenCode's message ID field", async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "jarvis-project-"));
+  let received: unknown;
+  const client = {
+    session: {
+      get: async () => ({ location: { directory } }),
+      prompt: async (input: unknown) => {
+        received = input;
+        return { id: "msg_generated_by_opencode" };
+      },
+    },
+  } as unknown as OpenCodeClient;
+  try {
+    const result = await sendProjectPrompt(client, project(directory), "ses_test", "test prompt");
+    assert.deepEqual(received, { sessionID: "ses_test", text: "test prompt" });
+    assert.deepEqual(result, { inbox_id: "msg_generated_by_opencode" });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

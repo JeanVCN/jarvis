@@ -86,7 +86,6 @@ export async function sendProjectPrompt(
   client: OpenCodeClient,
   project: AllowedProject,
   sessionID: string,
-  operationID: string,
   text: string,
   image?: InlineImage,
 ): Promise<{ inbox_id: string }> {
@@ -96,7 +95,7 @@ export async function sendProjectPrompt(
     source: { type: "inline" as const },
     name: "whatsapp-image",
   }] : undefined;
-  const accepted = await client.session.prompt({ sessionID, id: operationID, text, ...(files ? { files } : {}) });
+  const accepted = await client.session.prompt({ sessionID, text, ...(files ? { files } : {}) });
   return { inbox_id: accepted.id };
 }
 
