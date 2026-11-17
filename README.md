@@ -424,8 +424,8 @@ O Jarvis identifica suas respostas com `Jarvis:` e ignora mensagens com
 essa marca para evitar loops.
 
 O modelo segue o padrão do perfil Codex. Para selecionar outro modelo
-elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. Cada mensagem
-é um turno independente, sem histórico do canal. O SQLite guarda as
+elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. No chat normal,
+cada mensagem é um turno independente, sem histórico do canal. O SQLite guarda as
 credenciais do dispositivo vinculado para reconectar. Para parear outra
 conta, execute o mesmo comando com o novo número em `JARVIS_WHATSAPP_OWNER` e escaneie o QR nessa conta. Cada número tem
 seu próprio pareamento. Ao voltar ao número anterior, o Jarvis reutiliza o
@@ -435,6 +435,24 @@ O canal usa conexões de saída para WhatsApp e GPT. Para trocar mensagens,
 basta o processo estar rodando no notebook com internet. Tailscale fica
 para o acesso remoto à interface web e ao `/code`. O teste com uma conta
 real continua pendente.
+
+### OpenCode no chat Você
+
+Envie `/code` e espere a confirmação antes de enviar a tarefa. Envie
+`/code` novamente para voltar ao GPT do chat normal. O modo e o vínculo da
+sessão do OpenCode são persistidos por número e sobrevivem ao reinício.
+
+Configure `JARVIS_WHATSAPP_OPENCODE_PROJECT` com o ID de um projeto da
+allowlist do bridge, `JARVIS_OPENCODE_BRIDGE_TOKEN` com a credencial interna e,
+se necessário, `JARVIS_OPENCODE_BRIDGE_URL` com o endereço HTTP de loopback
+(padrão `http://127.0.0.1:18110`). Use o
+[bridge local do OpenCode](docs/opencode-integration.md) com a escrita
+habilitada para o ambiente de teste. O WhatsApp não precisa acessar o Core
+ou o frontend. Se o OpenCode ficar indisponível, a mensagem não segue para
+o GPT normal. Aprovações pendentes devem ser conferidas no OpenCode local.
+A troca de modo muda o destino de novos textos, sem cancelar tarefas já
+enviadas. Resultados e contexto são tratados pelo provedor configurado no
+próprio OpenCode.
 
 ## 🛠️ Tools
 

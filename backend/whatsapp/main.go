@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jean/jarvis/backend/internal/conversation"
+	"github.com/jean/jarvis/backend/internal/opencode"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -82,6 +83,31 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("open WhatsApp device store: %w", err)
 	}
 	defer store.Close()
+	routesDB, err := sql.Open("sqlite3", dsn.String())
+	if err != nil {
+		return err
+	}
+	defer routesDB.Close()
+	router := messageRouter{
+		db:      routesDB,
+		project: strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OPENCODE_PROJECT")),
+		chat:    func(ctx context.Context, prompt string) string { return generateReply(ctx, provider, prompt) },
+	}
+	if router.project != "" {
+		bridgeURL := os.Getenv("JARVIS_OPENCODE_BRIDGE_URL")
+		if bridgeURL == "" {
+			bridgeURL = "http://127.0.0.1:18110"
+		}
+		bridge, err := opencode.NewClient(bridgeURL, os.Getenv("JARVIS_OPENCODE_BRIDGE_TOKEN"))
+		if err != nil {
+			return fmt.Errorf("configurar bridge do OpenCode: %w", err)
+		}
+		router.bridge = bridge
+	}
+	if err := router.init(ctx); err != nil {
+		return fmt.Errorf("carregar roteamento do WhatsApp: %w", err)
+	}
+
 	device, err := store.GetFirstDevice(ctx)
 	if err != nil {
 		return fmt.Errorf("load WhatsApp device: %w", err)
@@ -101,6 +127,8 @@ func run(ctx context.Context) error {
 	}
 	defer client.Disconnect()
 
+	ctx, stopRouting := context.WithCancelCause(ctx)
+	defer stopRouting(nil)
 	incoming := make(chan *events.Message, 16)
 	loggedOut := make(chan struct{}, 1)
 	client.AddEventHandler(func(event any) {
@@ -119,7 +147,7 @@ func run(ctx context.Context) error {
 			select {
 			case incoming <- event:
 			default:
-				log.Print("fila do WhatsApp cheia; mensagem descartada")
+				stopRouting(errors.New("fila do WhatsApp cheia; roteamento interrompido"))
 			}
 		}
 	})
@@ -150,38 +178,36 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	seen := make(map[types.MessageID]struct{})
-	recent := make([]types.MessageID, 0, 512)
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return context.Cause(ctx)
 		case <-loggedOut:
 			return fmt.Errorf("o WhatsApp desvinculou o Jarvis; inicie o processo novamente para parear")
 		case event := <-incoming:
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
 			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
 			if prompt == "" {
 				continue
 			}
-			id := event.Info.ID
-			if _, duplicate := seen[id]; duplicate {
-				continue
-			}
-			if len(recent) == cap(recent) {
-				delete(seen, recent[0])
-				copy(recent, recent[1:])
-				recent = recent[:len(recent)-1]
-			}
-			seen[id] = struct{}{}
-			recent = append(recent, id)
-
 			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			reply := generateReply(replyCtx, provider, prompt)
-			cancel()
-			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			_, err := client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
+			reply, err := router.reply(replyCtx, string(event.Info.ID), prompt)
 			cancel()
 			if err != nil {
+				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", err)
+			}
+			if reply == "" {
+				continue
+			}
+			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			_, err = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
+			cancel()
+			if err != nil {
+				if prompt == "/code" {
+					return fmt.Errorf("não consegui confirmar o modo pelo WhatsApp; roteamento interrompido")
+				}
 				log.Print("Falha ao enviar resposta no WhatsApp")
 			}
 		}

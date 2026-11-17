@@ -100,7 +100,12 @@ func NewClient(baseURL, token string) (*Client, error) {
 	return &Client{
 		baseURL: parsed,
 		token:   token,
-		http:    &http.Client{Timeout: 5 * time.Second},
+		http: &http.Client{
+			Timeout: 5 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}, nil
 }
 

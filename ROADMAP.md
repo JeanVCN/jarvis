@@ -541,9 +541,11 @@ compatibilidade confirmada. Não iniciar A2/A3 se A1 falhar.
 ## WhatsApp — primeira etapa de texto
 
 - Implementado em `backend/whatsapp` via `whatsmeow`, usando apenas o chat consigo mesmo da conta que corresponde ao número configurado. Texto comum aciona a resposta e a marca `Jarvis:` evita loops.
-- Cada mensagem é processada isoladamente pelo GPT no perfil autenticado do Codex. A deduplicação é limitada à execução atual. O SQLite guarda o estado do dispositivo vinculado por número, permitindo parear outra conta com a mesma regra de chat consigo mesmo.
+- Cada mensagem é processada isoladamente pelo GPT no perfil autenticado do Codex. O roteamento deduplica IDs persistidos, sem guardar o texto no banco do canal. O SQLite guarda o estado do dispositivo vinculado por número, permitindo parear outra conta com a mesma regra de chat consigo mesmo.
+- `/code` alterna entre GPT e uma sessão OpenCode por conta/projeto. O modo persiste e falhas do OpenCode não encaminham a mensagem ao GPT normal.
 - Próximo teste: parear a conta escolhida e confirmar recebimento e envio na instalação real. A integração não oficial está sujeita a desconexões e mudanças do WhatsApp.
-- Segunda etapa: definir vínculo com o histórico e a memória do Jarvis de maneira independente do número usado. Mensagens de voz e avaliação da Cloud API oficial ficam para depois.
+- Segunda etapa: definir vínculo com o histórico e a memória do Jarvis de maneira independente do número usado. Avaliação da Cloud API oficial fica para depois.
+- Evolução planejada: receber e responder mensagens de áudio com STT/TTS somente no chat normal. No modo OpenCode, manter a entrada em texto.
 
 ## Atualização 2026-11-13 — Laboratório de voz contínua
 
