@@ -121,7 +121,7 @@ def main() -> None:
             )
         bridge_env.chmod(0o600)
         bridge_template = (ROOT / "deploy" / "systemd" / "jarvis-opencode-bridge.service.in").read_text()
-        bridge_unit = bridge_template.replace("@JARVIS_BRIDGE_DIR@", systemd_quote(str(ROOT / "opencode-bridge"))).replace(
+        bridge_unit = bridge_template.replace("@JARVIS_BRIDGE_DIR@", str(ROOT / "opencode-bridge")).replace(
             "@NODE_BINARY@", systemd_quote(node)
         )
         target = user_units / "jarvis-opencode-bridge.service"
@@ -133,7 +133,7 @@ def main() -> None:
         service_paths = [str(Path(binary).resolve().parent) for binary in (go, node, npm, docker, sys.executable) if binary]
         service_paths.extend(["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"])
         service_path = os.pathsep.join(dict.fromkeys(service_paths))
-        web_unit = web_template.replace("@JARVIS_ROOT@", systemd_quote(str(ROOT))).replace(
+        web_unit = web_template.replace("@JARVIS_ROOT@", str(ROOT)).replace(
             "@JARVIS_SCRIPT@", systemd_quote(str(ROOT / "scripts" / "jarvis"))
         ).replace("@SERVICE_PATH@", systemd_quote("PATH=" + service_path))
         target = user_units / "jarvis-web.service"
