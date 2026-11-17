@@ -156,15 +156,26 @@ Referências oficiais a conferir em A0: [início Android](https://developers.hom
 [tipos suportados](https://developers.home.google.com/apis/android/supported-device-types)
 e [comandos](https://developers.home.google.com/apis/android/device/control).
 
-## Canal opcional de texto via WhatsApp
+## Canal pessoal via WhatsApp
 
-`backend/whatsapp` é um processo separado com seu próprio módulo Go. Ele
-recebe eventos via dispositivo vinculado, filtra o chat consigo mesmo do
-número configurado e usa o adaptador Codex App Server de
-`internal/conversation` em modo de texto. A ligação com o
-PostgreSQL e com as sessões de conversa do Core fica para a etapa de histórico.
-O SQLite local guarda o pareamento do dispositivo. O canal não abre portas
-de entrada no host.
+`backend/whatsapp` é um processo Go independente. O dispositivo vinculado
+via `whatsmeow` recebe eventos por uma conexão de saída. A entrada aceita
+apenas o chat **Você** da conta pareada cujo número coincide com a
+configuração. O processo envia as respostas pela mesma conexão, com marca
+`Jarvis:` para evitar respostas em loop.
+
+| Entrada | Destino |
+|---|---|
+| `/code` digitado | Alternância local e persistida. O comando não aciona inferência. |
+| Texto no chat normal | OpenAI pelo perfil Codex autenticado, via adaptador de `internal/conversation`. |
+| Texto no modo OpenCode | `internal/opencode.Client` → bridge HTTP com token em loopback → sessão do projeto permitido. A resposta volta direto ao WhatsApp. |
+
+O SQLite guarda estado do dispositivo, modo, vínculos com sessões e IDs de
+mensagem por conta. O canal ainda não integra o histórico e a memória do
+Core. A sessão OpenCode tem contexto próprio e pode enviar dados ao modelo
+configurado nela. A API do Core, o frontend e o Tailscale são independentes
+do canal WhatsApp. Etapas futuras de histórico e voz estão no
+[roadmap](ROADMAP.md#prioridade-atual--jarvis-pessoal-no-whatsapp).
 
 ## Documentação das fases anteriores
 

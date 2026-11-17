@@ -4,7 +4,69 @@ Roadmap vivo do projeto Jarvis.
 
 Este arquivo deve ser atualizado quando funcionalidades forem concluidas, iniciadas ou replanejadas.
 
-## Avaliação de prontidão — 2026-11-16
+## Prioridade atual — Jarvis pessoal no WhatsApp
+
+**Objetivo.** Conversar com o Jarvis e delegar tarefas ao OpenCode no chat
+**Você** do próprio número. O Jarvis continua sendo uma implementação própria,
+voltada ao uso pessoal. OpenClaw e Talon são referências. Uma eventual
+integração para a empresa é uma avaliação separada.
+
+### 1. Texto e OpenCode — implementado, aguardando piloto real
+
+- `backend/whatsapp` usa `whatsmeow` como dispositivo vinculado. Cada conta tem
+  pareamento separado e só processa seu próprio chat **Você**. Outro número
+  pode ser pareado com a mesma regra, mantendo os vínculos anteriores.
+- Texto comum vai ao GPT autenticado pelo perfil Codex do Jarvis. Cada
+  mensagem do chat normal é um turno independente nesta etapa.
+- O comando digitado `/code` alterna para uma sessão do OpenCode no projeto
+  configurado na allowlist. Um novo `/code` volta ao chat normal. O Jarvis
+  confirma a troca e guarda modo e vínculo de sessão por conta. O resultado
+  volta pelo mesmo chat. A indisponibilidade do OpenCode mantém o modo ativo
+  e gera um aviso. Nenhuma mensagem desse modo é redirecionada ao GPT normal.
+- O canal usa conexões de saída e o bridge do OpenCode em loopback. O piloto
+  pelo WhatsApp dispensa API pública, webhook, acesso remoto pela rede local
+  e Tailscale. Tailscale fica como opção para o piloto separado da interface web.
+- O SQLite do canal guarda credenciais de pareamento, modo, vínculo de sessão
+  e IDs para deduplicação. O texto do WhatsApp ainda não é gravado nesse banco
+  como histórico. O OpenCode mantém o contexto das próprias sessões.
+
+**Critério de saída.** Quando o notebook estiver disponível, parear pelo QR,
+confirmar uma resposta do GPT autenticado e provar que outros chats e grupos
+são ignorados. Com OpenCode real rodando em loopback e um projeto descartável
+na allowlist, ativar `/code`, enviar uma tarefa, conferir o resultado e
+confirmar que as aprovações pendentes continuam sob controle local. Reiniciar
+o processo para verificar persistência do modo e da sessão. Desligar o bridge
+para verificar o aviso e a ausência de fallback. Alternar de volta e confirmar
+a resposta normal do GPT. Build e testes simulados já passaram. Este piloto
+real ainda está pendente.
+
+### 2. Histórico e memória — depois do piloto de texto
+
+- Vincular eventos e respostas do chat normal ao histórico do Jarvis no
+  PostgreSQL. Definir a identidade da conversa separadamente do número
+  pareado e quais contas autorizadas podem usar essa mesma memória.
+- Manter o contexto de tarefas no OpenCode. Definir quais metadados da
+  delegação devem aparecer no Jarvis e quais resultados podem entrar na
+  memória do chat normal, com uma decisão explícita antes de cruzar os contextos.
+
+### Evolução de voz — proposta para o mesmo chat
+
+- Uma nota de voz entra pelo mesmo canal. Reaproveitar o STT existente e
+  começar com Whisper `small` local em PT-BR. Se errar nomes, siglas ou
+  comandos com frequência, comparar com Whisper Large v3 Turbo na camada
+  gratuita da Groq. A opção remota exige escolha explícita porque envia o
+  áudio ao provedor. O GPT autenticado via Codex App Server continua
+  recebendo texto.
+- No modo OpenCode, encaminhar a transcrição à sessão existente e responder
+  por texto. No modo normal, uma invocação explícita no começo da fala, como
+  “OpenCode, roda os testes”, encaminha só aquela tarefa. Se o destino ficar
+  ambíguo ou a transcrição falhar, confirmar o destino ou pedir outro áudio.
+  O modo persistente muda somente com o `/code` digitado.
+- Resposta em nota de voz fica para o chat normal. As permissões de execução
+  do OpenCode continuam valendo para tarefas ditadas. Validar com gravações
+  reais em português antes de escolher STT/TTS.
+
+## Avaliação de prontidão da interface web — 2026-11-16
 
 **Conclusão:** estamos perto em termos de implementação, mas ainda não temos
 desenvolvimento remoto comprovado/operacional. A primeira fatia completa existe
@@ -48,7 +110,7 @@ descoberta real e validação da lâmpada não foram executados. Sem Android, po
 retomar apenas planejamento/documentação, não afirmar progresso de integração.
 Detalhes e sequência em A0–A5 abaixo.
 
-## Prioridade atual — integração Jarvis ↔ OpenCode
+## Trilha complementar — interface web Jarvis ↔ OpenCode
 
 Objetivo: permitir que o usuário programe pelo celular usando a interface do
 Jarvis. O Jarvis recebe tarefas, encaminha-as ao OpenCode executando no
@@ -537,15 +599,6 @@ compatibilidade confirmada. Não iniciar A2/A3 se A1 falhar.
 - Voice batch pode evoluir em paralelo com UI e providers, desde que preserve os contratos `SpeechRecognizer` e `VoiceProvider`.
 - Voice realtime pode evoluir em paralelo no `voice-agent`, desde que o backend Go continue sendo a autoridade para tools, memoria e permissoes.
 - Agents devem aguardar definicao de tools, memory e limites de seguranca.
-
-## WhatsApp — primeira etapa de texto
-
-- Implementado em `backend/whatsapp` via `whatsmeow`, usando apenas o chat consigo mesmo da conta que corresponde ao número configurado. Texto comum aciona a resposta e a marca `Jarvis:` evita loops.
-- Cada mensagem é processada isoladamente pelo GPT no perfil autenticado do Codex. O roteamento deduplica IDs persistidos, sem guardar o texto no banco do canal. O SQLite guarda o estado do dispositivo vinculado por número, permitindo parear outra conta com a mesma regra de chat consigo mesmo.
-- `/code` alterna entre GPT e uma sessão OpenCode por conta/projeto. O modo persiste e falhas do OpenCode não encaminham a mensagem ao GPT normal.
-- Próximo teste: parear a conta escolhida e confirmar recebimento e envio na instalação real. A integração não oficial está sujeita a desconexões e mudanças do WhatsApp.
-- Segunda etapa: definir vínculo com o histórico e a memória do Jarvis de maneira independente do número usado. Avaliação da Cloud API oficial fica para depois.
-- Evolução planejada: receber e responder mensagens de áudio com STT/TTS somente no chat normal. No modo OpenCode, manter a entrada em texto.
 
 ## Atualização 2026-11-13 — Laboratório de voz contínua
 

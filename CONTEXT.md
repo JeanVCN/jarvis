@@ -2,10 +2,18 @@
 
 Contexto operacional e conceitual do Jarvis.
 
-## Contexto vigente — integração Jarvis ↔ OpenCode
+## Contexto vigente — Jarvis pessoal no WhatsApp
 
-Esta seção prevalece sobre direções anteriores abaixo. Planejamento executável e
-critérios estão em `ROADMAP.md`, fases C0–C4.
+A prioridade é validar texto e delegação ao OpenCode no chat **Você** do
+próprio número. O código já tem pareamento separado por conta, GPT autenticado
+para conversa normal e `/code` persistente para tarefas no OpenCode. O bridge
+fica em loopback. A interface web continua sendo uma alternativa de acesso
+privado ao workspace, com validação separada. A ordem de trabalho, o piloto
+pendente, o histórico e o plano de voz estão no início de [ROADMAP.md](ROADMAP.md).
+
+## Contexto complementar — interface web Jarvis ↔ OpenCode
+
+Planejamento e critérios da interface web estão em `ROADMAP.md`, fases C0–C4.
 
 - Objetivo ativo: programar pelo celular usando Jarvis como interface e ponto de
   controle, delegando tarefas de código ao OpenCode V2 que roda no computador dos
