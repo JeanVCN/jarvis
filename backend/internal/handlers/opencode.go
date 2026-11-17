@@ -293,7 +293,9 @@ func RegisterOpenCode(router *gin.Engine, client *opencode.Client, store opencod
 			c.JSON(http.StatusNotFound, gin.H{"error": "opencode_session_not_found"})
 			return
 		}
-		if link.State == "uncertain" && link.ExternalID == nil {
+		// The Core can stop after OpenCode creates the session but before the
+		// local journal records the result. Recover by lookup without resubmitting.
+		if link.ExternalID == nil && (link.State == "creating" || link.State == "uncertain") {
 			lookupCtx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 			created, lookupErr := client.FindCreatedSession(lookupCtx, link.ProjectID, link.ID)
 			cancel()

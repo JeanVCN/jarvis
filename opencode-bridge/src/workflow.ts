@@ -69,7 +69,9 @@ export async function findCreatedSession(
   const result = await client.session.list({ directory: project.directory, limit: 100 });
   const matches = result.data.filter((session) => session.metadata?.jarvis_operation_id === operationID);
   if (matches.length !== 1) return undefined;
-  const session = matches[0];
+  // A directory-filtered listing identifies candidates. Verify ownership
+  // from the session itself before restoring a persisted Jarvis link.
+  const session = await assertSessionProject(client, project, matches[0].id);
   return {
     id: session.id,
     title: session.title ?? "Nova sessão",
