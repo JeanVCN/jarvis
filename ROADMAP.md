@@ -4,6 +4,49 @@ Roadmap vivo do projeto Jarvis.
 
 Este arquivo deve ser atualizado quando funcionalidades forem concluidas, iniciadas ou replanejadas.
 
+## Avaliação de prontidão — 2026-11-16
+
+**Conclusão:** estamos perto em termos de implementação, mas ainda não temos
+desenvolvimento remoto comprovado/operacional. A primeira fatia completa existe
+no código e a escrita está protegida por opt-in; ainda não foi qualificada contra
+uma instalação OpenCode real nem por um telefone na tailnet. Não anunciar como
+recurso móvel pronto nem ativar `JARVIS_OPENCODE_WRITE_ENABLED` antes dos gates
+abaixo.
+
+### Evolução observada
+
+- A primeira versão conectava bridge, Core e `/code` somente para leitura.
+- A fronteira escolhida mudou de login Jarvis single-user para acesso local/
+  tailnet sem conta Jarvis. O frontend valida `Origin` em mutações; Tailscale e
+  suas regras por dispositivo passam a ser a fronteira de acesso remoto. Essa
+  configuração ainda não foi exercitada.
+- A versão atual acrescenta sessão Jarvis↔OpenCode persistida, operações com
+  estados e ID de correlação, criação de sessão, prompt, consulta/reconciliação de
+  resposta/diff e aprovações `once`/`reject`. Core e bridge exigem o flag de escrita;
+  ambos ficam desligados por padrão. Testes automatizados cobrem contratos com
+  mocks, não comportamento real do OpenCode.
+- Continuação é por polling. Stream de eventos e interrupção explícita ainda não
+  existem; não impedem uma prova controlada, mas são trabalho posterior.
+
+### Gate para declarar “programar à distância” utilizável
+
+1. Configurar Tailscale Serve e grants/ACLs; provar acesso de um dispositivo
+   autorizado e bloqueio de outro, sem expor Core/bridge/OpenCode.
+2. No computador-alvo, executar `scripts/jarvis` com OpenCode 2.2.7 e verificar
+   `/code` em modo read-only e a allowlist.
+3. Em projeto descartável e com autorização explícita, habilitar escrita e
+   completar pelo telefone: criar sessão, enviar tarefa, aprovar uma ação uma vez
+   ou rejeitá-la, receber resposta/diff e continuar a sessão.
+4. Simular perda de conexão/reinício e confirmar que o journal reconcilia estados
+   sem repetir prompt/efeito automaticamente; validar crash/restart do Core.
+
+**Troca de foco:** depois desse gate, é razoável tirar OpenCode da prioridade
+diária e retomar a trilha IoT quando houver Android. Hoje IoT continua bloqueada
+para integração física: existe somente o probe Android read-only compilado; OAuth,
+descoberta real e validação da lâmpada não foram executados. Sem Android, pode-se
+retomar apenas planejamento/documentação, não afirmar progresso de integração.
+Detalhes e sequência em A0–A5 abaixo.
+
 ## Prioridade atual — integração Jarvis ↔ OpenCode
 
 Objetivo: permitir que o usuário programe pelo celular usando a interface do
@@ -72,7 +115,8 @@ permanecem fora do acesso direto do cliente.
 ### Fase C1 — contrato e adaptador OpenCode
 
 Estado: adaptador read/write integrado; build e testes com mocks passaram. Falta
-validar o fluxo script→Core→frontend e o contrato contra OpenCode 2.2.7 real.
+validar o fluxo script→Core→frontend, o contrato contra OpenCode 2.2.7 real e o
+acesso remoto por dispositivo.
 Mantenha `JARVIS_OPENCODE_WRITE_ENABLED=false` até C0 e as verificações reais de
 permissão, ID de prompt e reconciliação estarem concluídas.
 

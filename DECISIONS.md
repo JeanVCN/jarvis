@@ -667,8 +667,9 @@ Impacto:
 
 ### 2026-11-15 - Jarvis delega tarefas de código ao OpenCode
 
-Status: direção aceita; autenticação opcional no proxy Next e adaptador read-only
-integrado ao Core/UI (C0–C1 parciais em `ROADMAP.md`); delegação não implementada.
+Status: direção aceita; bridge read/write, persistência e UI implementados atrás
+de flag opt-in (C0–C3 parciais em `ROADMAP.md`). Qualificação real e acesso móvel
+continuam pendentes.
 
 Contexto:
 
@@ -676,8 +677,8 @@ Contexto:
   enviando tarefas ao Jarvis e recebendo retorno do executor sem precisar operar
   sempre no computador.
 - Jarvis já tem Core Go, frontend Next.js, agente de voz Python e conversas/eventos
-  persistidos; `/api/v2` só autoriza `time` e `calculator`. O frontend tem login
-  single-user opcional, mas o Core não autentica usuário diretamente.
+  persistidos; `/api/v2` só autoriza `time` e `calculator`. Não haverá login de
+  usuário Jarvis nesta trilha; o acesso remoto será limitado pela tailnet.
 - OpenCode V2 oferece serviço local, API de sessão/eventos/permissões e cliente
   TypeScript oficial. Eventos do client são ao vivo, sem replay/reconexão automática.
 
@@ -685,25 +686,27 @@ Decisão:
 
 - Integrar OpenCode V2 como executor inicial de tarefas de programação, em vez de
   construir um harness completo próprio.
-- Jarvis continua como interface, identidade, orquestrador, associação de projeto
-  e registro da delegação. OpenCode executa no computador que contém os projetos.
-- Implementar primeiro um adaptador local TypeScript com `@opencode/client`, expondo
-  ao Core Go somente operações de projeto/sessão, prompt, status, mensagens/diff,
-  interrupção e pedidos de permissão. Estado atual: somente GET de status,
-  projetos e metadados de sessões implementados; rotas de escrita não existem.
-  O SDK embutido continua alternativa; Compose e topologia remota ainda pendentes.
+- Jarvis continua como interface/orquestrador, associação do projeto permitido e
+  registro da delegação. Não há identidade/conta de usuário Jarvis nesta trilha.
+  OpenCode executa no computador que contém os projetos.
+- Usar adaptador local TypeScript com `@opencode/client`, expondo ao Core operações
+  limitadas de projeto/sessão, prompt, consulta e permissões. Estado atual: leitura,
+  escrita opt-in, journal PostgreSQL e UI implementados; interrupção ainda pendente.
+  O SDK embutido não foi escolhido; Compose e topologia remota ainda pendentes.
 - O celular acessa Jarvis pela rede privada e nunca precisa conectar-se
-  diretamente ao serviço OpenCode. Autenticação do Jarvis, lista allowlist de
-  projetos e fronteira local do adaptador são pré-requisitos para delegar.
-- A autenticação atual é aplicada pelo proxy Next, não pelo Core. Até existir
-  auth de usuário no Core, as portas do Core permanecem apenas em loopback e
-  requests do navegador passam pela mesma origem protegida do frontend.
+  diretamente ao serviço OpenCode. Não criar login Jarvis: usar Tailscale Serve e
+  grants/ACLs restritos aos dispositivos escolhidos. O Core não autentica usuários;
+  Core, bridge e OpenCode permanecem em loopback, com o frontend como única entrada
+  remota. Validar acesso permitido e negado antes de usar.
 - Começar com aprovações pontuais e política conservadora; não aceitar paths
   arbitrários nem automatizar aprovações. Permissões OpenCode não são sandbox:
   shell tem autoridade do usuário local.
 - Após desconexão, reconciliar estado/mensagens via API antes de repetir tarefa;
   não prometer entrega exatamente uma vez. Jarvis exibe resultado final e diff
   somente após confirmar estado da sessão OpenCode.
+- Habilitar escrita somente após validar OpenCode real em projeto descartável,
+  política efetiva de permissões, reconciliação/restart e acesso remoto por
+  dispositivo. O opt-in existe, mas permanece desligado por padrão.
 - Esta direção não promete controle genérico de GUI/desktop. A trilha residencial
   Home APIs fica pausada até o usuário ter Android; o probe compilado é somente um
   checkpoint preservado.
@@ -711,3 +714,18 @@ Decisão:
 Referências V2: `https://opencode.ai/docs/build/client/`,
 `https://opencode.ai/docs/api/`, `https://opencode.ai/docs/cli/web/`,
 `https://opencode.ai/docs/permissions/` e `https://opencode.ai/docs/policies/`.
+
+### 2026-11-16 - Gate de piloto remoto antes do retorno à IoT
+
+Status: sequência recomendada; validação ainda pendente.
+
+- A integração Jarvis↔OpenCode já tem o caminho de escrita completo no código,
+  com journal e proteções opt-in. Isso a deixa perto de um piloto, mas não prova
+  operação real: os testes atuais não substituem OpenCode real, regras de rede nem
+  uso pelo telefone.
+- Antes de tirar OpenCode da prioridade ativa, validar Tailscale por dispositivo,
+  o fluxo completo no telefone em projeto descartável e reconciliação após perda
+  de conexão/restart. Critérios operacionais em `ROADMAP.md`.
+- Depois desse gate, pode-se devolver prioridade à IoT se houver Android. Sem o
+  aparelho, OAuth, descoberta da lâmpada e teste físico seguem bloqueados; não
+  marcar integração residencial como retomada apenas por atualizar documentação.

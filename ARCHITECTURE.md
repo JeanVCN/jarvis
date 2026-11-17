@@ -2,7 +2,7 @@
 
 Documentacao arquitetural do estado atual do Jarvis.
 
-## Estado de referência — 2026-11-15
+## Estado de referência — 2026-11-16
 
 O fluxo atual de laboratório usa Next.js `/lab`, Python SmallWebRTC para áudio
 e Go `/api/v2` para conversa, provedores e ferramentas, com histórico, turnos,
@@ -31,7 +31,7 @@ Celular/desktop → UI Jarvis (Tailscale/rede privada) → Core Go (loopback)
   programação no computador que contém os repositórios. Não é assumido como
   controlador genérico da interface gráfica do desktop.
 - Direção escolhida: integrar OpenCode V2 em vez de criar agora um harness
--  completo próprio. Implementado: adaptador local TypeScript usando
+  completo próprio. Implementado: adaptador local TypeScript usando
   `@opencode/client`, iniciado opcionalmente pelo script host. Criar sessão,
   enviar prompt, acompanhar por consulta, ler resposta/diff e responder `once`/
   `reject` estão atrás de `JARVIS_OPENCODE_WRITE_ENABLED`, desligado por padrão.
@@ -65,22 +65,32 @@ Celular/desktop → UI Jarvis (Tailscale/rede privada) → Core Go (loopback)
   [Web/serviço](https://opencode.ai/docs/cli/web/),
   [permissões](https://opencode.ai/docs/permissions/),
   [políticas](https://opencode.ai/docs/policies/).
-- O protótipo atual usa `@opencode/client` 2.2.7, `Service.discover` e versão
-  OpenCode `2.x`; faz bind somente em `127.0.0.1`, exige bearer token interno e
-  lê apenas projetos allowlisted, status e metadados de sessões. Não envia prompts,
-  comandos nem conteúdo de mensagens. Execução opcional por `scripts/jarvis` via
-  `JARVIS_OPENCODE_BRIDGE_ENABLED=true`; configuração em
-  `opencode-bridge/README.md`.
-- Quando habilitado, o Core registra apenas GET `/api/opencode/status`,
-  `/projects` e `/projects/:project/sessions`; no startup exige variáveis de auth
-  Jarvis configuradas, mas não valida cookie/sessão por request. `/code` mostra
-  esses dados sem diretórios locais ou conteúdo de mensagens. O
-  Compose permanece desabilitado para esse recurso; a topologia suportada nesta
-  fase é o script que executa Core/Next/OpenCode no host.
-- O contrato de escrita ainda está bloqueado. `session.prompt` retorna item
-  inbox, não conclusão; falha após envio exige reconciliação, nunca retry cego.
-  Aprovação persistente `always` não fará parte do fluxo inicial. Detalhes e
-  verificações pendentes em `docs/opencode-integration.md`.
+- Bridge usa `@opencode/client` 2.2.7 e `Service.discover`, faz bind somente em
+  `127.0.0.1`, exige bearer interno e resolve projetos por allowlist. Além das
+  rotas read-only, cria sessões, envia prompts, lê respostas/diff limitados e
+  intermedeia permissões pontuais. Toda escrita está atrás de
+  `JARVIS_OPENCODE_WRITE_ENABLED`, false por padrão; exige habilitação tanto no
+  Core quanto no bridge. A persistência/journal fica no PostgreSQL.
+- `/code` permite selecionar projeto/sessão, continuar tarefa, acompanhar por
+  polling e reconciliar estados incertos. Stream de eventos e interrupção explícita
+  ainda não existem. Compose não habilita o bridge; a topologia atual é o script
+  host. Detalhes de configuração em `opencode-bridge/README.md`.
+- O app não terá login Jarvis. O frontend verifica origem nas mutações; Core não
+  autentica usuário. O controle remoto depende de Tailscale Serve e grants/ACLs
+  restritos, ainda não testados. Core, bridge e OpenCode não podem ficar acessíveis
+  diretamente ao cliente.
+- `session.prompt` confirma entrada na inbox, não conclusão. Embora a operação
+  tenha ID Jarvis persistido e seja reconciliada, sua idempotência no servidor
+  OpenCode ainda não foi comprovada. Não repetir automaticamente chamadas incertas.
+  Ver pendências em `docs/opencode-integration.md`.
+
+#### Prontidão e mudança de prioridade — 2026-11-16
+
+O código está perto de uma prova piloto, mas o uso remoto ainda não foi validado:
+faltam OpenCode real, grants Tailscale por dispositivo e um ciclo completo pelo
+telefone. O gate e a recomendação para retomar IoT estão em `ROADMAP.md`. Após o
+gate, faz sentido devolver prioridade à IoT quando houver Android; sem Android,
+OAuth, discovery real da lâmpada e validação física continuam bloqueados.
 
 ### Extensão residencial pausada: app Android e Google Home
 
@@ -406,24 +416,29 @@ Infra:
 - Manter novas tools atras do contrato `Tool` e do `ToolRegistry`.
 - Manter providers de voz batch atras dos contratos `SpeechRecognizer` e `VoiceProvider`.
 - Manter voz realtime isolada no `voice-agent`, chamando o Jarvis Core em vez de executar tools diretamente.
-- Adicionar migrations versionadas para entidades reais e decidir se o carregamento via `/docker-entrypoint-initdb.d` sera suficiente ou se sera adotado um migrator dedicado.
-- Adicionar testes unitarios para config, database health e handlers.
-- Adicionar padrao de erro HTTP antes de ampliar muito a API.
-- Avaliar autenticacao antes de habilitar acesso remoto via Tailscale.
+- Manter migrations aditivas e aplicação versionada em runtime; usar
+  `/docker-entrypoint-initdb.d` somente como bootstrap de banco novo.
+- Continuar ampliando testes, sobretudo contratos com serviços reais e fluxos de
+  reconexão; a quantidade de testes não substitui qualificação operacional.
+- Manter erros HTTP consistentes nas novas rotas.
+- Acesso remoto depende de grants/ACLs Tailscale por dispositivo; validar antes
+  de habilitar uso móvel. Não há login Jarvis nesta trilha.
 - Manter separacao entre URL interna de container e URL publica de navegador.
 
-## Observacoes de Risco
+## Observacoes de Risco — rotas legadas e validações pendentes
 
-- A migration atual roda automaticamente apenas quando o volume PostgreSQL e inicializado pela primeira vez.
+- O bootstrap SQL do Compose só inicializa volume novo; o Core também aplica
+  migrations versionadas em runtime ao iniciar.
 - O backend falha ao iniciar se o banco nao estiver disponivel.
 - O health check ainda acessa o wrapper de banco diretamente.
-- O chat inicial nao persiste historico e nao usa memoria.
-- O chat com streaming reduz latencia percebida, mas ainda nao persiste historico e nao implementa cancelamento explicito na UI.
+- As rotas legadas `/api/chat` e `/api/chat/stream` não compartilham a persistência
+  conversacional de `/api/v2`.
 - Tool calling inicial suporta uma chamada de tool por interacao; fluxos multi-step ficam para evolucao futura.
 - STT/TTS dependem de binarios e modelos locais configurados no ambiente.
 - O endpoint de voz batch ainda usa upload do trecho detectado por VAD; a direcao principal para experiencia natural passa a ser o `voice-agent` realtime.
 - Wake word atual e baseada na transcricao, nao em keyword spotting acustico dedicado.
-- Ainda ha poucos testes automatizados implementados no repositorio.
+- A escrita OpenCode passou testes com mocks, mas ainda falta teste ponta a ponta
+  contra serviço OpenCode real e acesso por telefone.
 - `npm audit --omit=dev` aponta vulnerabilidades moderadas em dependencia transitiva do Next.js/PostCSS na versao observada.
 
 ## 2026-11-13 — Laboratório de voz contínua

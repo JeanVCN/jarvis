@@ -208,3 +208,8 @@ integração Jarvis↔OpenCode registrada ao final deste documento e no `ROADMAP
   qualificar permissões, prompt e reconciliação no OpenCode real antes de ativar
   escrita. Plano em `ROADMAP.md` C0–C4; arquitetura em
   `ARCHITECTURE.md`; decisão em `DECISIONS.md`.
+- Avaliação 2026-11-16: a fatia de escrita já existe atrás de flag e passou testes
+  com mocks, mas não foi usada com OpenCode real nem telefone. Não confundir
+  proximidade de implementação com prontidão remota. Retomar IoT após o gate piloto
+  do `ROADMAP.md` e quando houver Android; antes disso somente planejamento pode
+  avançar na trilha residencial.

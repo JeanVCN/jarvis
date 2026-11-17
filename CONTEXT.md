@@ -40,6 +40,11 @@ critérios estão em `ROADMAP.md`, fases C0–C4.
 - Próxima ação é configurar/validar acesso privado por dispositivo e qualificar
   a escrita com OpenCode real em projeto descartável antes de habilitar o flag.
   Fases e critérios em `ROADMAP.md`; arquitetura em `ARCHITECTURE.md`.
+- Avaliação em 2026-11-16: estamos perto de uma prova piloto, não de uso remoto
+  pronto. O código read/write existe atrás de flag; faltam ACL Tailscale testada,
+  validação real OpenCode e ciclo pelo telefone. IoT pode voltar à prioridade após
+  esse gate, mas integração física continua bloqueada até Android; hoje há somente
+  probe read-only sem OAuth/discovery real.
 
 ## Contexto das fases anteriores
 

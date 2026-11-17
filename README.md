@@ -76,6 +76,14 @@ não tem conta ou login Jarvis; o acesso remoto é limitado à tailnet.
 O fluxo de escrita ainda é experimental: foi exercitado com mocks, mas aguarda
 validação contra OpenCode real e regras Tailscale por dispositivo antes do uso.
 
+**Avaliação de prontidão (2026-11-16):** estamos próximos de um piloto técnico,
+mas não de uso remoto já comprovado. Antes de chamar “programar à distância” de
+pronto, falta validar acesso permitido/negado pela tailnet e completar pelo
+telefone uma tarefa em projeto descartável, incluindo aprovação e reconciliação
+após desconexão. Depois desse gate, a prioridade pode voltar à IoT quando houver
+Android; hoje a trilha residencial tem apenas probe read-only, sem OAuth nem
+descoberta real. O gate completo está em [`ROADMAP.md`](ROADMAP.md).
+
 ### Acesso privado (fundação C0)
 
 O script executa frontend, Core e bridge em loopback. Para acesso remoto, publique
