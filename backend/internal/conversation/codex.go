@@ -5,6 +5,7 @@ package conversation
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,6 +19,17 @@ import (
 type Codex struct {
 	Model, Home, Binary string
 	textOnly            bool
+	persona             string
+	threadStore         ThreadStore
+}
+
+const maxCodexAppServerFrameBytes = 16 << 20
+
+// ThreadStore persists only the provider-native thread identifier. Message
+// content remains inside the Codex thread store under CODEX_HOME.
+type ThreadStore interface {
+	Get(context.Context) (string, error)
+	Set(context.Context, string) error
 }
 
 func NewCodex(model string) (Provider, error) {
@@ -26,6 +38,17 @@ func NewCodex(model string) (Provider, error) {
 
 func NewCodexText(model string) (Provider, error) {
 	return newCodex(model, true)
+}
+
+func NewCodexTextWithThreadStore(model, persona string, store ThreadStore) (Provider, error) {
+	provider, err := newCodex(model, true)
+	if err != nil {
+		return nil, err
+	}
+	p := provider.(Codex)
+	p.persona = strings.TrimSpace(persona)
+	p.threadStore = store
+	return p, nil
 }
 
 func newCodex(model string, textOnly bool) (Provider, error) {
@@ -40,11 +63,32 @@ func newCodex(model string, textOnly bool) (Provider, error) {
 	return Codex{Model: model, Home: home, Binary: bin, textOnly: textOnly}, nil
 }
 func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string) error) ([]Call, error) {
-	work, e := os.MkdirTemp("", "jarvis-codex-")
+	return p.stream(ctx, messages, "", nil, emit)
+}
+
+func (p Codex) StreamImage(ctx context.Context, messages []Message, mimeType string, image []byte, emit func(string) error) ([]Call, error) {
+	if !p.textOnly || !supportedImageMIME(mimeType) || len(image) == 0 || len(image) > 10<<20 {
+		return nil, &Failure{Code: "invalid_image_input"}
+	}
+	return p.stream(ctx, messages, mimeType, image, emit)
+}
+
+func (p Codex) stream(ctx context.Context, messages []Message, imageMIME string, image []byte, emit func(string) error) ([]Call, error) {
+	work := ""
+	var e error
+	persistentThread := p.textOnly && p.threadStore != nil
+	if persistentThread {
+		work = filepath.Join(p.Home, "jarvis-chat-workspace")
+		e = os.MkdirAll(work, 0700)
+	} else {
+		work, e = os.MkdirTemp("", "jarvis-codex-")
+	}
 	if e != nil {
 		return nil, e
 	}
-	defer os.RemoveAll(work)
+	if !persistentThread {
+		defer os.RemoveAll(work)
+	}
 	cmd := exec.CommandContext(ctx, p.Binary, "app-server", "-c", "features.shell_tool=false", "-c", "features.unified_exec=false", "-c", "features.apply_patch_freeform=false", "-c", "features.apps=false", "-c", "features.multi_agent=false", "-c", `web_search="disabled"`)
 	cmd.Dir = work
 	for _, name := range []string{"PATH", "HOME", "USER", "LANG", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CODEX_PROXY_CERT", "TMPDIR"} {
@@ -69,7 +113,9 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 	var mu sync.Mutex
 	send := func(v any) error { mu.Lock(); defer mu.Unlock(); return json.NewEncoder(input).Encode(v) }
 	scan := bufio.NewScanner(output)
-	scan.Buffer(make([]byte, 8192), 2*1024*1024)
+	// The App Server echoes inline images in JSON notifications. A 10 MiB
+	// image expands to about 13.4 MiB as base64, before JSON framing.
+	scan.Buffer(make([]byte, 8192), maxCodexAppServerFrameBytes)
 	// App Server notifications may arrive before the response to turn/start.
 	// Keep them while waiting for request IDs instead of silently dropping them.
 	pending := make([]json.RawMessage, 0, 8)
@@ -118,14 +164,36 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 	if a.Type != "chatgpt" {
 		return nil, &Failure{Code: "chatgpt_login_required"}
 	}
-	params := map[string]any{"cwd": work, "ephemeral": true, "sandbox": "read-only", "approvalPolicy": "never", "baseInstructions": "Você é o Jarvis. Não use ferramentas nativas, arquivos, comandos ou rede. Responda em português, com texto curto. Quando precisar de uma ferramenta Jarvis, responda SOMENTE JSON: {\"jarvis_tool\":\"calculator\",\"input\":\"25 * 4\"}. Ferramentas permitidas: calculator e time. Resultados estarão no contexto; nunca invente execução."}
+	baseInstructions := "Você é o Jarvis. Não use ferramentas nativas, arquivos, comandos ou rede. Responda em português, com texto curto. Quando precisar de uma ferramenta Jarvis, responda SOMENTE JSON: {\"jarvis_tool\":\"calculator\",\"input\":\"25 * 4\"}. Ferramentas permitidas: calculator e time. Resultados estarão no contexto; nunca invente execução."
 	if p.textOnly {
-		params["baseInstructions"] = "Você é o Jarvis. Responda em português com texto curto. Use apenas o conteúdo da mensagem recebida. Não use ferramentas, arquivos, comandos ou rede."
+		baseInstructions = p.persona
+		if baseInstructions == "" {
+			baseInstructions = "Você é o Jarvis, assistente pessoal do usuário. Fale em português brasileiro, com tom natural, cordial e respostas concisas. Ajude com dúvidas e tarefas cotidianas. Considere o histórico desta conversa para manter continuidade. Não use ferramentas, arquivos, comandos ou rede; não afirme ter executado ações externas."
+		}
 	}
+	params := map[string]any{"cwd": work, "ephemeral": !persistentThread, "sandbox": "read-only", "approvalPolicy": "never", "baseInstructions": baseInstructions}
 	if p.Model != "" {
 		params["model"] = p.Model
 	}
-	started, e := request(3, "thread/start", params)
+	method := "thread/start"
+	requestID := 3
+	if persistentThread {
+		threadID, err := p.threadStore.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if threadID != "" {
+			method = "thread/resume"
+			params["threadId"] = threadID
+			// The thread history stays in Codex's store and is not needed in
+			// this resume response; avoid returning a potentially large payload.
+			params["excludeTurns"] = true
+			delete(params, "ephemeral")
+		} else {
+			delete(params, "threadId")
+		}
+	}
+	started, e := request(requestID, method, params)
 	if e != nil {
 		return nil, e
 	}
@@ -136,11 +204,21 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 	if thread.ID == "" {
 		return nil, errors.New("missing_thread")
 	}
+	if persistentThread {
+		if e = p.threadStore.Set(ctx, thread.ID); e != nil {
+			return nil, e
+		}
+	}
 	contextText, e := codexConversationInput(messages)
 	if e != nil {
 		return nil, e
 	}
-	result, e := request(4, "turn/start", map[string]any{"threadId": thread.ID, "input": []any{map[string]any{"type": "text", "text": contextText, "text_elements": []any{}}}})
+	turnInput := []any{map[string]any{"type": "text", "text": contextText, "text_elements": []any{}}}
+	if len(image) > 0 {
+		dataURL := "data:" + imageMIME + ";base64," + base64.StdEncoding.EncodeToString(image)
+		turnInput = append(turnInput, map[string]any{"type": "image", "url": dataURL})
+	}
+	result, e := request(4, "turn/start", map[string]any{"threadId": thread.ID, "input": turnInput})
 	if e != nil {
 		return nil, e
 	}
@@ -251,6 +329,15 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 		return nil, ctx.Err()
 	}
 	return nil, errors.New("codex_incomplete_stream")
+}
+
+func supportedImageMIME(mimeType string) bool {
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func codexConversationInput(messages []Message) (string, error) {

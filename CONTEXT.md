@@ -5,11 +5,25 @@ Contexto operacional e conceitual do Jarvis.
 ## Contexto vigente — Jarvis pessoal no WhatsApp
 
 A prioridade é validar texto e delegação ao OpenCode no chat **Você** do
-próprio número. O código já tem pareamento separado por conta, GPT autenticado
-para conversa normal e `/code` persistente para tarefas no OpenCode. O bridge
-fica em loopback. A interface web continua sendo uma alternativa de acesso
+próprio número. O código já tem pareamento separado por conta, thread Codex
+persistentemente retomada para conversa normal, notas de voz com STT local e
+`/code` persistente para tarefas no OpenCode. O bridge fica em loopback. A interface web continua sendo uma alternativa de acesso
 privado ao workspace, com validação separada. A ordem de trabalho, o piloto
 pendente, o histórico e o plano de voz estão no início de [ROADMAP.md](ROADMAP.md).
+`/cmd` ainda não está implementado; fica adiado até existir uma ponte Android
+para as Google Home APIs.
+O contexto inicial da conversa Codex é configurável por
+`JARVIS_WHATSAPP_NAME` e `JARVIS_WHATSAPP_PERSONA`; o identificador da thread
+fica no SQLite de cada conta e seu histórico permanece no `CODEX_HOME`. Duas
+instâncias para números diferentes podem rodar ao mesmo tempo e compartilhar
+autenticação, mantendo pareamento, thread, nome e persona separados. O roadmap
+registra a validação de retomada após reinício e distingue essa thread de
+retomar diretamente uma conversa do GPT Work. A mesma personalidade no Ollama
+permanece futura.
+GPT/Codex não terá ferramentas para acessar a máquina local; OpenCode será o
+único executor local. Ações externas, como gerenciar campanhas, exigem integração
+específica com a plataforma correspondente, já que os conectores do ChatGPT Work
+não são herdados automaticamente pelo OAuth do Codex.
 
 ## Contexto complementar — interface web Jarvis ↔ OpenCode
 

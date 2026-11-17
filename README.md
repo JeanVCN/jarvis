@@ -405,7 +405,7 @@ Resposta esperada:
 }
 ```
 
-## WhatsApp — texto em modo experimental
+## WhatsApp — texto, notas de voz e imagens em modo experimental
 
 O canal usa seu próprio número, Go 1.26+, CGO com compilador C e o GPT
 autenticado pelo Codex App Server. Prepare uma vez o [perfil Codex do
@@ -417,24 +417,152 @@ cd backend/whatsapp
 JARVIS_WHATSAPP_OWNER=5544XXXXXXXXX go run .
 ```
 
-Use seu número com país e DDD. Em **Aparelhos conectados**, escaneie o QR
-com essa mesma conta. Espere aparecer `WhatsApp conectado` e mande texto
-comum no chat **Você**. Só esse chat do número configurado recebe resposta.
-O Jarvis identifica suas respostas com `Jarvis:` e ignora mensagens com
-essa marca para evitar loops.
+Use o número do aparelho que será vinculado, com país e DDD. Em **Aparelhos
+conectados**, escaneie o QR nessa conta. Espere aparecer `WhatsApp conectado`
+e mande texto comum no chat **Você**. Só esse chat do número configurado
+recebe resposta. O nome configurado em `JARVIS_WHATSAPP_NAME` (padrão
+`Jarvis`) orienta a personalidade, mas não aparece como prefixo. As respostas
+no modo normal ficam sem rótulo; no modo `/code`, a última parte termina com
+`*OpenCode*`.
 
 O modelo segue o padrão do perfil Codex. Para selecionar outro modelo
-elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. No chat normal,
-cada mensagem é um turno independente, sem histórico do canal. O SQLite guarda as
-credenciais do dispositivo vinculado para reconectar. Para parear outra
-conta, execute o mesmo comando com o novo número em `JARVIS_WHATSAPP_OWNER` e escaneie o QR nessa conta. Cada número tem
-seu próprio pareamento. Ao voltar ao número anterior, o Jarvis reutiliza o
-vínculo, se ainda estiver ativo. O `whatsmeow`
+elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. O chat normal mantém
+uma thread Codex persistente por conta vinculada. O Jarvis guarda somente o ID
+dessa thread no SQLite; o histórico do modelo fica no `CODEX_HOME` do perfil
+Codex. Personalize o contexto inicial com `JARVIS_WHATSAPP_PERSONA` e defina
+`JARVIS_WHATSAPP_NAME` para dar nome próprio à instância.
+
+Notas de voz (PTT) de até 120 segundos e 15 MiB são baixadas em memória e
+transcritas pelo STT local configurado em `VOICE_STT_COMMAND` e
+`VOICE_STT_ARGS`. O arquivo temporário usado pelo reconhecedor é removido ao
+fim da chamada; o Jarvis não grava áudio nem transcrição no SQLite. A
+transcrição segue o modo já confirmado no chat: modo normal envia texto ao GPT
+pela thread persistente; `/code` envia texto à sessão OpenCode existente. A
+transcrição não pode ativar `/code` por conta própria e uma falha no OpenCode
+nunca redireciona o conteúdo ao GPT. Sem STT local disponível, o Jarvis pede
+outro áudio ou texto. Mensagens com áudio que não sejam notas PTT continuam
+ignoradas.
+
+Fotos do WhatsApp no chat **Você** são encaminhadas no formato original,
+sem OCR, redimensionamento ou classificação local. O MVP aceita JPEG, PNG e
+WebP de até 10 MiB, com legenda opcional. A rota respeita o modo atual: no modo
+normal a imagem segue inline ao Codex; em `/code`, segue como anexo inline à
+sessão OpenCode. Não há fallback para outro provedor se o destino não aceitar
+imagens. O Jarvis mantém os bytes apenas durante o encaminhamento, mas o Codex
+pode reter a imagem na thread persistente e o OpenCode na própria sessão; o
+modelo configurado no OpenCode pode ser remoto. Use apenas modelos com visão.
+
+O SQLite também guarda as credenciais do dispositivo vinculado para reconectar.
+Para rodar dois números ao mesmo tempo, inicie uma instância do processo para
+cada aparelho, usando `JARVIS_WHATSAPP_OWNER` diferente em cada terminal.
+Cada número tem pareamento, SQLite, thread Codex, nome e personalidade próprios.
+As duas instâncias podem compartilhar o mesmo perfil autenticado do Codex
+(`JARVIS_CODEX_HOME`), usando a mesma conta GPT, sem compartilhar a thread ou o
+histórico de conversa do Jarvis. Configure `JARVIS_WHATSAPP_NAME` e
+`JARVIS_WHATSAPP_PERSONA` separadamente em cada processo. Exemplo:
+
+```sh
+# Terminal 1: seu número e sua conversa pessoal
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5544111111111 JARVIS_WHATSAPP_NAME=Jarvis go run .
+
+# Terminal 2: outro aparelho com identidade própria
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5544222222222 JARVIS_WHATSAPP_NAME=JarvisCasa \
+  JARVIS_WHATSAPP_PERSONA='Ajude com rotinas e informações da casa.' go run .
+```
+
+Use o mesmo `JARVIS_CODEX_HOME` nos dois terminais para reutilizar a autenticação,
+mas mantenha números distintos. Cada processo precisa continuar rodando; não
+inicie duas instâncias para o mesmo número. Ao voltar a iniciar uma instância,
+o Jarvis reutiliza o vínculo correspondente, se ainda estiver ativo. O `whatsmeow`
 é uma integração não oficial, sujeita a desconexão ou restrição de conta.
 O canal usa conexões de saída para WhatsApp e GPT. Para trocar mensagens,
 basta o processo estar rodando no notebook com internet. Tailscale fica
 para o acesso remoto à interface web e ao `/code`. O teste com uma conta
 real continua pendente.
+
+### Manter o Jarvis rodando no Linux
+
+O QR do primeiro pareamento ainda aparece no terminal do processo WhatsApp; a
+interface web não tem onboarding de pareamento. Faça esse pareamento uma vez
+com `go run .` e, depois de ver `WhatsApp conectado`, encerre o processo. Evite
+parear através do journal do systemd: o QR é uma credencial temporária e pode
+ficar retido nos logs.
+
+```sh
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5544111111111 \
+  JARVIS_CODEX_ENABLED=true JARVIS_CODEX_HOME="$HOME/.codex" go run .
+```
+
+Depois instale os serviços de usuário. O instalador compila um binário para cada
+número e prepara unidades que iniciam no login, reiniciam após falha e enviam
+logs ao journal. Ele não inicia nem habilita serviços automaticamente.
+
+```sh
+python3 scripts/install-systemd-user.py --owner 5544111111111
+```
+
+Para habilitar também o bridge OpenCode e o site/Core sem captura contínua de
+voz, instale as dependências e compile frontend e bridge antes:
+
+```sh
+cd frontend
+npm ci && npm run build
+cd ../opencode-bridge
+npm ci && npm run build
+cd ..
+python3 scripts/install-systemd-user.py \
+  --owner 5544111111111 --with-opencode-bridge --with-web
+```
+
+Revise `~/.config/jarvis/whatsapp-NUMERO.env` e, se usar `/code`, configure
+`~/.config/jarvis/opencode-bridge.env` com a allowlist JSON `JARVIS_OPENCODE_PROJECTS`,
+`JARVIS_OPENCODE_BRIDGE_ENABLED=true` e `JARVIS_OPENCODE_WRITE_ENABLED=false`
+até a validação local. O instalador gera
+o token interno do bridge com permissões `0600`; o serviço WhatsApp recebe esse
+mesmo token. O ID de projeto usado pela instância fica em
+`JARVIS_WHATSAPP_OPENCODE_PROJECT` no arquivo dela. O perfil Codex padrão é
+`~/.codex`; se usar outro, informe `JARVIS_CODEX_HOME` no env file da instância.
+Esses arquivos são locais e não devem ser commitados.
+
+Exemplo da allowlist (ajuste o caminho absoluto; mantenha a linha do token que
+o instalador gerou):
+
+```ini
+JARVIS_OPENCODE_PROJECTS="[{\"id\":\"jarvis\",\"name\":\"Jarvis\",\"directory\":\"/home/usuario/jarvis\"}]"
+JARVIS_OPENCODE_BRIDGE_ENABLED=true
+JARVIS_OPENCODE_WRITE_ENABLED=false
+```
+
+Habilite somente os serviços que for usar:
+
+```sh
+systemctl --user enable --now jarvis-whatsapp@5544111111111.service
+systemctl --user enable --now jarvis-opencode-bridge.service
+systemctl --user enable --now jarvis-web.service
+```
+
+Pareamento, canal WhatsApp, bridge, Core e frontend podem ser consultados com
+`systemctl --user status` e `journalctl --user -u NOME-DO-SERVICO`. Para iniciar
+os serviços no boot antes de abrir a sessão gráfica, habilite o *linger* do
+usuário uma vez com `loginctl enable-linger SEU-USUARIO`. A configuração de
+energia do host é separada: bloqueie a sessão, deixe o display apagar e mantenha
+o notebook acordado na tomada. Os units não bloqueiam suspensão.
+
+O unit web usa `scripts/jarvis run --no-voice-agent`, reduzindo trabalho em
+repouso. O serviço WhatsApp sozinho não precisa do Core/frontend; `/code`
+precisa do bridge. Depois de atualizar o checkout, rode novamente o instalador
+para recompilar os binários e atualizar os units. A instalação e o teste em um
+Linux de usuário ainda precisam ser validados no notebook-alvo.
+
+As respostas convertem títulos, listas, links, negrito, itálico, tachado,
+blocos de código e tabelas para formas mais legíveis no Markdown do WhatsApp.
+Respostas extensas são divididas em mensagens menores, preservando blocos de
+código entre partes. Os IDs de mensagens enviadas pelo Jarvis são guardados
+para que eventos de eco não voltem à conversa; o conteúdo das respostas não é
+duplicado no SQLite.
 
 ### OpenCode no chat Você
 
@@ -449,10 +577,16 @@ se necessário, `JARVIS_OPENCODE_BRIDGE_URL` com o endereço HTTP de loopback
 [bridge local do OpenCode](docs/opencode-integration.md) com a escrita
 habilitada para o ambiente de teste. O WhatsApp não precisa acessar o Core
 ou o frontend. Se o OpenCode ficar indisponível, a mensagem não segue para
-o GPT normal. Aprovações pendentes devem ser conferidas no OpenCode local.
-A troca de modo muda o destino de novos textos, sem cancelar tarefas já
-enviadas. Resultados e contexto são tratados pelo provedor configurado no
-próprio OpenCode.
+o GPT normal. Perguntas estruturadas do OpenCode chegam com o texto do agente,
+títulos, alternativas, descrições e a marca `Recommended` quando fornecida.
+Responda com o número da opção; texto que não seja um número é enviado como
+resposta personalizada. Formulários com vários campos aceitam valores na
+ordem, separados por ponto e vírgula. Para autorizações pendentes, use
+`/aprovar` ou `/rejeitar`; se houver mais de um pedido, acrescente o número,
+como `/aprovar 2`. A aprovação vale somente para a ação selecionada. A troca
+de modo muda o destino de novas mensagens, sem cancelar tarefas já enviadas.
+Resultados e contexto são tratados pelo provedor configurado no próprio
+OpenCode.
 
 ## 🛠️ Tools
 

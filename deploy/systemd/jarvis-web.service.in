@@ -1,0 +1,30 @@
+[Unit]
+Description=Jarvis local web stack (without continuous voice capture)
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=@JARVIS_ROOT@
+Environment=HOME=%h
+Environment=@SERVICE_PATH@
+EnvironmentFile=-%h/.config/jarvis/web.env
+EnvironmentFile=-%h/.config/jarvis/opencode-bridge.env
+ExecStart=@JARVIS_SCRIPT@ run --no-voice-agent --external-opencode-bridge
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=35s
+KillMode=mixed
+UMask=0077
+Nice=5
+CPUWeight=50
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=default.target

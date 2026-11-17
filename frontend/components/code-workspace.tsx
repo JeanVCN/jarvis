@@ -11,6 +11,7 @@ import {
   getOpenCodeStatus,
   interruptOpenCodeSession,
   replyOpenCodePermission,
+  replyOpenCodeForm,
   sendOpenCodePrompt,
   type JarvisSession,
   type JarvisSessionSnapshot,
@@ -18,6 +19,7 @@ import {
   type OpenCodeProject,
   type OpenCodeSession,
   type OpenCodeStatus,
+  type SessionDetail,
 } from "@/services/opencode";
 
 function newOperationID(): string {
@@ -38,6 +40,121 @@ function operationLabel(state: string): string {
     failed: "Falhou",
     uncertain: "Resultado incerto — reconcilie antes de qualquer novo envio",
   } as Record<string, string>)[state] ?? state;
+}
+
+type OpenCodeForm = SessionDetail["forms"][number];
+type FormAnswerValue = string | number | boolean | string[];
+
+function optionLabel(option: NonNullable<OpenCodeForm["fields"][number]["options"]>[number], index: number): string {
+  const detail = option.description ? ` — ${option.description}` : "";
+  const recommended = option.recommended || /\brecommended\b/i.test(`${option.label} ${option.description ?? ""}`);
+  return `${index + 1}) ${option.label}${detail}${recommended ? " (Recommended)" : ""}`;
+}
+
+function OpenCodeFormCard({
+  form,
+  disabled,
+  onSubmit,
+}: {
+  form: OpenCodeForm;
+  disabled: boolean;
+  onSubmit: (answer: Record<string, FormAnswerValue>) => void;
+}) {
+  const [values, setValues] = useState<Record<string, string | string[]>>({});
+  const [error, setError] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const answer: Record<string, FormAnswerValue> = {};
+    for (const field of form.fields) {
+      const current = values[field.key];
+      const custom = values[`custom:${field.key}`];
+      const customText = typeof custom === "string" ? custom : "";
+      const raw = current === "__custom__" ? custom : current;
+      if (field.type === "multiselect") {
+        const selected = Array.isArray(current) ? current : [];
+        const choices = customText.trim() ? [...selected, customText.trim()] : selected;
+        if (choices.length === 0) {
+          setError(`Preencha o campo ${field.title || field.key}.`);
+          return;
+        }
+        answer[field.key] = choices;
+        continue;
+      }
+      if (typeof raw !== "string" || raw.trim() === "") {
+        setError(`Preencha o campo ${field.title || field.key}.`);
+        return;
+      }
+      if (field.type === "integer") {
+        const parsed = Number(raw);
+        if (!Number.isInteger(parsed)) { setError(`${field.title || field.key} precisa ser um número inteiro.`); return; }
+        answer[field.key] = parsed;
+      } else if (field.type === "number") {
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed)) { setError(`${field.title || field.key} precisa ser um número.`); return; }
+        answer[field.key] = parsed;
+      } else if (field.type === "boolean") {
+        if (raw === "true") answer[field.key] = true;
+        else if (raw === "false") answer[field.key] = false;
+        else { setError(`Escolha sim ou não em ${field.title || field.key}.`); return; }
+      } else {
+        answer[field.key] = raw.trim();
+      }
+    }
+    setError("");
+    onSubmit(answer);
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-lg border border-cyan-800 bg-cyan-950/20 p-4">
+      <p className="font-medium text-cyan-100">Pergunta do OpenCode{form.title ? `: ${form.title}` : ""}</p>
+      <div className="mt-3 space-y-4">
+        {form.fields.map((field) => {
+          const options = field.options ?? [];
+          const title = field.title || field.key;
+          const customSelected = values[field.key] === "__custom__";
+          return (
+            <fieldset key={field.key} className="space-y-2">
+              <legend className="text-sm font-medium text-slate-100">{title}</legend>
+              {field.description ? <p className="text-xs text-slate-400">{field.description}</p> : null}
+              {field.type === "multiselect" ? (
+                <div className="space-y-2">
+                  {options.map((option, index) => {
+                    const selected = Array.isArray(values[field.key]) ? values[field.key] as string[] : [];
+                    return <label key={option.value} className="flex items-start gap-2 text-sm text-slate-200">
+                      <input type="checkbox" disabled={disabled} checked={selected.includes(option.value)} onChange={(event) => setValues((current) => ({
+                        ...current,
+                        [field.key]: event.target.checked ? [...selected, option.value] : selected.filter((value) => value !== option.value),
+                      }))} />
+                      <span>{optionLabel(option, index)}</span>
+                    </label>;
+                  })}
+                  {field.custom ? <input aria-label={`Resposta personalizada para ${title}`} value={typeof values[`custom:${field.key}`] === "string" ? values[`custom:${field.key}`] as string : ""} onChange={(event) => setValues((current) => ({ ...current, [`custom:${field.key}`]: event.target.value }))} disabled={disabled} placeholder="Adicionar outra opção" className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /> : null}
+                </div>
+              ) : field.type === "boolean" ? (
+                <select aria-label={title} value={typeof values[field.key] === "string" ? values[field.key] as string : ""} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} disabled={disabled} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                  <option value="">Selecione…</option><option value="true">Sim</option><option value="false">Não</option>
+                </select>
+              ) : options.length > 0 ? (
+                <>
+                  <select aria-label={title} value={typeof values[field.key] === "string" ? values[field.key] as string : ""} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} disabled={disabled} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                    <option value="">Selecione uma opção…</option>
+                    {options.map((option, index) => <option key={option.value} value={option.value}>{optionLabel(option, index)}</option>)}
+                    {field.custom ? <option value="__custom__">Resposta personalizada</option> : null}
+                  </select>
+                  {customSelected ? <input aria-label={`Resposta personalizada para ${title}`} value={typeof values[`custom:${field.key}`] === "string" ? values[`custom:${field.key}`] as string : ""} onChange={(event) => setValues((current) => ({ ...current, [`custom:${field.key}`]: event.target.value }))} disabled={disabled} placeholder="Sua resposta" className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" /> : null}
+                </>
+              ) : (
+                <input aria-label={title} type={field.type === "integer" || field.type === "number" ? "number" : "text"} step={field.type === "integer" ? "1" : field.type === "number" ? "any" : undefined} value={typeof values[field.key] === "string" ? values[field.key] as string : ""} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} disabled={disabled} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" />
+              )}
+            </fieldset>
+          );
+        })}
+      </div>
+      {error ? <p role="alert" className="mt-3 text-sm text-rose-300">{error}</p> : null}
+      <button type="submit" disabled={disabled} className="mt-4 rounded bg-cyan-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar respostas</button>
+    </form>
+  );
 }
 
 export function CodeWorkspace() {
@@ -180,6 +297,22 @@ export function CodeWorkspace() {
       await refreshSelected();
     } catch {
       setError("Não foi possível confirmar a decisão. Reconcilie a sessão antes de tentar novamente.");
+      await refreshSelected().catch(() => undefined);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function replyForm(formID: string, answer: Record<string, FormAnswerValue>) {
+    if (!selectedSession || !status?.write_enabled || working) return;
+    setWorking(true);
+    setError("");
+    try {
+      await replyOpenCodeForm(selectedSession, formID, newOperationID(), answer);
+      setNotice("Resposta enviada ao OpenCode.");
+      await refreshSelected();
+    } catch {
+      setError("Não foi possível confirmar o envio. Reconcilie a sessão antes de responder novamente.");
       await refreshSelected().catch(() => undefined);
     } finally {
       setWorking(false);
@@ -329,6 +462,14 @@ export function CodeWorkspace() {
                     ))}
                   </div>
                 ) : null}
+                {(snapshot.detail.forms ?? []).map((form) => (
+                  <OpenCodeFormCard
+                    key={form.id}
+                    form={form}
+                    disabled={!status?.write_enabled || working}
+                    onSubmit={(answer) => void replyForm(form.id, answer)}
+                  />
+                ))}
                 {snapshot.detail.diff.length > 0 ? (
                   <details className="rounded-lg border border-slate-800 p-3">
                     <summary className="cursor-pointer text-sm font-medium">Alterações ({snapshot.detail.diff.length} arquivos)</summary>

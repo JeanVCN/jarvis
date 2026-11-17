@@ -2,6 +2,9 @@ package opencode
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 
 	"github.com/jackc/pgx/v5"
@@ -152,6 +155,51 @@ func (s Store) StartPermission(ctx context.Context, operationID, sessionID, requ
 	return op, true, tx.Commit(ctx)
 }
 
+func (s Store) StartForm(ctx context.Context, operationID, sessionID, formID string, answer map[string]any) (Operation, bool, error) {
+	encoded, err := json.Marshal(answer)
+	if err != nil || len(encoded) == 0 {
+		return Operation{}, false, ErrConflict
+	}
+	digest := sha256.Sum256(encoded)
+	input := "form:" + formID + ":" + hex.EncodeToString(digest[:])
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return Operation{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	if op, err := scanOperation(tx.QueryRow(ctx, `SELECT id,project_id,session_id,kind,input,state,external_id,error_code
+		FROM opencode_operations WHERE id=$1`, operationID)); err == nil {
+		if op.Kind != "form" || op.SessionID != sessionID || op.Input != input {
+			return Operation{}, false, ErrConflict
+		}
+		return op, false, tx.Commit(ctx)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return Operation{}, false, err
+	}
+	var projectID, sessionState string
+	err = tx.QueryRow(ctx, `SELECT project_id,state FROM opencode_sessions WHERE id=$1 FOR UPDATE`, sessionID).
+		Scan(&projectID, &sessionState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Operation{}, false, ErrSessionNotFound
+	}
+	if err != nil {
+		return Operation{}, false, err
+	}
+	if sessionState != "ready" {
+		return Operation{}, false, ErrSessionUnavailable
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO opencode_operations(id,project_id,session_id,kind,input,state,external_id)
+		VALUES($1,$2,$3,'form',$4,'submitting',$5)`, operationID, projectID, sessionID, input, formID); err != nil {
+		return Operation{}, false, err
+	}
+	op, err := scanOperation(tx.QueryRow(ctx, `SELECT id,project_id,session_id,kind,input,state,external_id,error_code
+		FROM opencode_operations WHERE id=$1`, operationID))
+	if err != nil {
+		return Operation{}, false, err
+	}
+	return op, true, tx.Commit(ctx)
+}
+
 func (s Store) StartInterrupt(ctx context.Context, operationID, sessionID string) (Operation, bool, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -238,6 +286,12 @@ func (s Store) AcceptPrompt(ctx context.Context, operationID, inboxID string) er
 func (s Store) AcceptPermission(ctx context.Context, operationID string) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE opencode_operations SET state='completed',error_code=NULL,updated_at=now()
 		WHERE id=$1 AND kind='permission' AND state='submitting'`, operationID)
+	return err
+}
+
+func (s Store) AcceptForm(ctx context.Context, operationID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE opencode_operations SET state='completed',error_code=NULL,updated_at=now()
+		WHERE id=$1 AND kind='form' AND state='submitting'`, operationID)
 	return err
 }
 

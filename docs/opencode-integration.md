@@ -36,6 +36,11 @@ registra os limites que devem orientar a qualificação no computador-alvo.
 - `permission.list/get/reply` consultam pedidos pendentes por sessão. `reply`
   aceita `once`, `always` ou `reject`; `always` pode salvar autorização e não
   deve ser oferecido como aprovação normal na UI móvel.
+- `session.form.list/get/reply` expõe formulários interativos do agente. O canal
+  WhatsApp repassa texto, rótulos, descrições e escolhas; um número seleciona a
+  opção correspondente e texto livre responde de forma personalizada. A UI web
+  também apresenta os campos e opções como controles e registra a decisão no
+  journal sem persistir o conteúdo da resposta.
 - `session.interrupt` solicita que o OpenCode pare a execução atual. O aceite da
   chamada não garante parada instantânea nem desfaz arquivos/efeitos já
   produzidos; após resposta ou erro incerto, consultar novamente a sessão. Nunca

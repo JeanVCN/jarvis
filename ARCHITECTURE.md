@@ -2,6 +2,20 @@
 
 Documentacao arquitetural do estado atual do Jarvis.
 
+## Canal WhatsApp
+
+O processo Go do WhatsApp filtra mensagens para o chat **Você** do número
+autorizado em `JARVIS_WHATSAPP_OWNER`, encaminha texto/voz/imagem pelo modo
+persistido e salva metadados em SQLite específico do número. Instâncias para
+números diferentes podem rodar em paralelo; cada uma usa seu próprio banco,
+pareamento, thread Codex, nome (`JARVIS_WHATSAPP_NAME`) e persona
+(`JARVIS_WHATSAPP_PERSONA`). Elas podem compartilhar `JARVIS_CODEX_HOME` e a
+mesma autenticação OAuth, enquanto as threads Codex permanecem separadas por
+conta do WhatsApp. O adaptador converte Markdown comum para o subconjunto mais
+compatível com WhatsApp e divide respostas grandes. Imagens JPEG/PNG/WebP são
+encaminhadas inline ao Codex ou OpenCode; o Jarvis não aplica OCR ou transformação.
+Ver limites e retenção em [README.md](README.md#whatsapp--texto-notas-de-voz-e-imagens-em-modo-experimental).
+
 ## Estado de referência — 2026-11-16
 
 O fluxo atual de laboratório usa Next.js `/lab`, Python SmallWebRTC para áudio
@@ -161,25 +175,44 @@ e [comandos](https://developers.home.google.com/apis/android/device/control).
 `backend/whatsapp` é um processo Go independente. O dispositivo vinculado
 via `whatsmeow` recebe eventos por uma conexão de saída. A entrada aceita
 apenas o chat **Você** da conta pareada cujo número coincide com a
-configuração. O processo envia as respostas pela mesma conexão, com marca
-`Jarvis:` para evitar respostas em loop.
+configuração. As respostas seguem sem prefixo no modo GPT; em `/code`, a última
+parte termina com `*OpenCode*`. O SQLite guarda IDs das mensagens enviadas para
+filtrar ecos sem depender de texto visível nem duplicar o conteúdo. No modo
+OpenCode, o bridge também encaminha formulários de pergunta e decisões de
+permissão ao chat WhatsApp: opções por número ou resposta personalizada;
+`/aprovar` e `/rejeitar` respondem somente a pedidos pendentes identificados.
 
 | Entrada | Destino |
 |---|---|
 | `/code` digitado | Alternância local e persistida. O comando não aciona inferência. |
-| Texto no chat normal | OpenAI pelo perfil Codex autenticado, via adaptador de `internal/conversation`. |
+| Texto ou transcrição PTT no chat normal | Thread Codex persistente via `internal/conversation`; o SQLite guarda somente seu ID e o conteúdo fica no `CODEX_HOME`. |
 | Texto no modo OpenCode | `internal/opencode.Client` → bridge HTTP com token em loopback → sessão do projeto permitido. A resposta volta direto ao WhatsApp. |
+| Transcrição PTT no modo OpenCode | Sessão OpenCode existente; sem fallback para GPT se o bridge estiver indisponível. |
+| Foto no chat normal | Bytes originais como `UserInput.image` inline para a thread Codex persistente; sem OCR ou transformação local. |
+| Foto no modo OpenCode | Anexo `data:` inline pela bridge autenticada e sessão OpenCode allowlisted; sem fallback para GPT. |
 
 O SQLite guarda estado do dispositivo, modo, vínculos com sessões e IDs de
-mensagem por conta. O canal ainda não integra o histórico e a memória do
-Core. A sessão OpenCode tem contexto próprio e pode enviar dados ao modelo
-configurado nela. A API do Core, o frontend e o Tailscale são independentes
-do canal WhatsApp. Etapas futuras de histórico e voz estão no
+mensagem por conta, mais o ID da thread Codex. Notas PTT de até 120 segundos e
+15 MiB são transcritas via comando local ou endpoint STT HTTP de loopback; o
+áudio é descartado e a transcrição não entra no SQLite do Jarvis. O canal não
+integra o histórico do Core. A sessão OpenCode tem contexto próprio e pode
+enviar dados ao modelo configurado nela. A API do Core, o frontend e o
+Tailscale são independentes do canal WhatsApp. Retenção/exclusão da thread,
+resposta falada e piloto real seguem pendentes no
 [roadmap](ROADMAP.md#prioridade-atual--jarvis-pessoal-no-whatsapp).
+Fotos JPEG, PNG e WebP até 10 MiB são encaminhadas sem transformação; seus
+bytes não são gravados pelo Jarvis, mas o provedor pode retê-los no contexto
+da thread Codex ou sessão OpenCode.
+
+GPT/Codex permanece sem ferramentas locais de filesystem ou shell. OpenCode é o
+único executor local para desenvolvimento. Integrações de trabalho externo,
+como campanhas, devem usar APIs/MCPs específicos com autorização limitada; o
+OAuth do Codex não disponibiliza automaticamente conectores do ChatGPT Work.
 
 ### Entradas planejadas e fronteira de atuação
 
-As notas de voz passam por STT local para identificar o destino. A invocação
+As notas de voz atuais seguem o modo previamente confirmado por `/code`; voz
+não ativa modo nem seleciona executor por inferência. A futura invocação
 de IoT, digitada como `/cmd` ou falada explicitamente, seleciona o catálogo
 local para um único turno. Comandos exatos podem ser resolvidos diretamente,
 e o Ollama local pode interpretar linguagem natural em formato estruturado.
@@ -188,6 +221,10 @@ operação e parâmetros no Core antes de chegar ao executor físico. GPT e
 OpenCode continuam com suas rotas próprias e sem autoridade para chamar esse
 executor. O módulo de imagens pertence ao chat normal e trata conteúdo
 extraído como dados, sem interpretá-lo como comandos de atuação.
+
+`/cmd` ainda não está implementado no WhatsApp. O trabalho foi adiado até haver
+uma ponte Android real para as Google Home APIs; não automatizar a interface do
+app Google Home como substituto dessa integração.
 
 
 ## Documentação das fases anteriores

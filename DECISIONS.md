@@ -733,7 +733,8 @@ Status: sequência recomendada; validação ainda pendente.
 
 ### 2026-11-16 - WhatsApp pessoal e roteamento explícito
 
-Status: aceita. Texto e alternância implementados, piloto real pendente.
+Status: aceita. Texto, alternância, thread Codex persistente e notas PTT com
+STT local implementados; piloto real pendente.
 
 - O Jarvis terá implementação própria para uso pessoal. A conta vinculada
   só aciona o Jarvis em sua própria conversa **Você**. Cada conta tem
@@ -748,8 +749,104 @@ Status: aceita. Texto e alternância implementados, piloto real pendente.
 - A conexão local reduz a exposição de rede. O modelo remoto escolhido no
   OpenCode ainda pode receber prompt, arquivos ou saídas incluídas na tarefa.
   Aprovações do OpenCode seguem sob controle local.
-- Histórico compartilhado e notas de voz serão evoluídos após a primeira
-  validação do transporte. Ver o plano e os critérios em [ROADMAP.md](ROADMAP.md).
+- O canal mantém thread Codex por conta vinculada; o SQLite armazena somente
+  o ID da thread e o histórico do motor fica em `CODEX_HOME`. Notas de voz PTT
+  são transcritas localmente e seguem o modo atual; /code precisa ser digitado.
+  Ver o plano e os critérios em [ROADMAP.md](ROADMAP.md).
+
+### 2026-11-17 - Thread Codex persistente e voz WhatsApp com roteamento pelo modo
+
+Status: implementada; retomada real e qualidade de STT pendentes de piloto.
+
+Contexto:
+
+- O adaptador Codex criava uma thread efêmera a cada mensagem.
+- O canal WhatsApp só extraía texto, embora o Jarvis já tivesse um reconhecedor
+  STT configurável para uso local.
+- O usuário quer manter o custo adicional em R$ 0 e separar conversa GPT da
+  execução local, que permanece exclusiva do OpenCode.
+
+Decisão:
+
+- Manter uma thread Codex persistente por conta WhatsApp, salvar apenas seu ID
+  no SQLite e deixar o histórico do provedor sob `CODEX_HOME`. A instrução inicial
+  aceita a personalidade configurada por `JARVIS_WHATSAPP_PERSONA`.
+- Receber somente notas PTT até 120 segundos e 15 MiB. Reutilizar STT por
+  comando ou por HTTP em loopback; descartar mídia temporária e não guardar
+  transcrição no SQLite do Jarvis.
+- Roteamento de voz segue exclusivamente o modo já confirmado: normal para GPT,
+  `/code` para a sessão OpenCode ativa. Áudio não muda o modo nem escolhe
+  executor por inferência; indisponibilidade do OpenCode não faz fallback para
+  GPT. STT remoto e respostas em áudio ficam fora desta implementação.
+
+Impacto:
+
+- O histórico da thread do Codex é retido pelo `CODEX_HOME`, separado do
+  histórico canônico visível no WhatsApp; reset e exclusão precisam ser definidos.
+- Build e piloto com Codex/STT reais continuam pendentes neste ambiente. Não
+  houve validação de qualidade com gravações reais.
+
+### 2026-11-17 - Encaminhamento direto de imagens no WhatsApp
+
+Status: implementado; compatibilidade real dos modelos e retenção pendentes de
+piloto.
+
+Contexto:
+
+- O usuário quer perguntar sobre imagens sem criar OCR ou classificador local.
+- O canal já mantém uma rota explícita entre a conversa Codex e a sessão
+  OpenCode; o uso deve preservar essa fronteira.
+
+Decisão:
+
+- Encaminhar fotos JPEG, PNG e WebP até 10 MiB como anexos inline originais:
+  `UserInput.image` no Codex App Server ou `files` inline na sessão OpenCode.
+- Incluir a legenda como texto, ou usar um pedido curto de análise quando não
+  houver legenda. Legenda `/code` não alterna o modo; só texto digitado pode
+  alternar. Erros de destino não encaminham a imagem a outro provedor.
+- Não aplicar OCR, redimensionamento ou classificação local. Os bytes ficam em
+  memória durante o envio, sem persistência ou log pelo Jarvis. O provedor pode
+  manter a imagem na thread/sessão e seu modelo pode ser remoto.
+
+Impacto:
+
+- GPT/Codex recebe apenas a imagem anexada ao turno, sem ferramentas ou acesso
+  genérico ao filesystem. OpenCode recebe a imagem na sessão do projeto já
+  allowlisted, com as permissões de execução existentes.
+- Modelos selecionados precisam suportar visão. Compatibilidade, qualidade,
+  latência e retenção de conteúdo devem ser confirmadas no piloto real.
+
+### 2026-11-17 - Instâncias WhatsApp simultâneas e formatação de respostas
+
+Status: implementado; execução concorrente em dois aparelhos e exibição real
+do Markdown continuam pendentes de piloto.
+
+Decisão:
+
+- Rodar uma instância do processo por número, com `JARVIS_WHATSAPP_OWNER`
+  distinto. O banco local separado por número mantém credenciais do aparelho,
+  modo, sessão OpenCode e thread Codex independentes.
+- Configurar `JARVIS_WHATSAPP_NAME` e `JARVIS_WHATSAPP_PERSONA` por processo.
+  As instâncias podem usar o mesmo `JARVIS_CODEX_HOME` para reutilizar a conta
+  OAuth, sem reutilizar thread ou contexto conversacional entre números.
+- Converter Markdown comum (títulos, listas, ênfase, links, tabelas e código)
+  para o formato de WhatsApp e fragmentar respostas extensas em mensagens
+  menores com os blocos de código balanceados.
+- Manter respostas do modo GPT sem rótulo visível. No modo OpenCode, anexar
+  `*OpenCode*` somente ao final da última parte. Filtrar mensagens ecoadas pelo
+  ID gerado para cada envio e persistir apenas esse ID, sem prefixo no texto.
+- Repassar pelo WhatsApp as perguntas estruturadas do OpenCode com títulos,
+  opções e descrições intactos; responder com número seleciona a opção e texto
+  livre preenche a resposta personalizada. Decidir permissões com `/aprovar`
+  ou `/rejeitar`, numerando quando houver vários pedidos; nunca expor `always`.
+
+Impacto:
+
+- Exige dois processos ativos e dois números vinculados; não se deve iniciar
+  mais de um processo para o mesmo número. Recursos de apresentação e limites
+  de tamanho precisam ser confirmados em aparelhos reais.
+- Usar um mesmo perfil Codex em processos concorrentes ainda precisa de
+  validação prática, especialmente persistência de threads e bloqueios locais.
 
 
 ### 2026-11-16 - Comando de IoT local por mensagem

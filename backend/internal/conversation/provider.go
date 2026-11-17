@@ -39,6 +39,11 @@ func (e *Failure) Error() string { return e.Code }
 type Provider interface {
 	Stream(context.Context, []Message, func(string) error) ([]Call, error)
 }
+
+type ImageProvider interface {
+	StreamImage(context.Context, []Message, string, []byte, func(string) error) ([]Call, error)
+}
+
 type Scripted struct{ Delay time.Duration }
 
 func (p Scripted) Stream(ctx context.Context, messages []Message, emit func(string) error) ([]Call, error) {

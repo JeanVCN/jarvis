@@ -1,4 +1,4 @@
-// Command whatsapp runs the optional, text-only WhatsApp channel.
+// Command whatsapp runs the optional WhatsApp chat and voice-note channel.
 package main
 
 import (
@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"mime"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,8 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jean/jarvis/backend/internal/config"
 	"github.com/jean/jarvis/backend/internal/conversation"
 	"github.com/jean/jarvis/backend/internal/opencode"
+	"github.com/jean/jarvis/backend/internal/voice"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -27,8 +31,6 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
-
-const replyPrefix = "Jarvis: "
 
 var phoneNumber = regexp.MustCompile(`^[1-9][0-9]{7,14}$`)
 
@@ -46,11 +48,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("defina JARVIS_WHATSAPP_OWNER com o número autorizado, incluindo país e DDD")
 	}
 	owner := types.NewJID(number, types.DefaultUserServer)
-
-	provider, err := conversation.NewCodexText(os.Getenv("JARVIS_WHATSAPP_MODEL"))
-	if err != nil {
-		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
-	}
 
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -88,10 +85,28 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer routesDB.Close()
+	assistantName := whatsappAssistantName(os.Getenv("JARVIS_WHATSAPP_NAME"))
+	persona := strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_PERSONA"))
+	if persona == "" {
+		persona = fmt.Sprintf("Você é %s, assistente pessoal do usuário. Fale em português brasileiro, com tom natural, cordial e respostas concisas. Ajude com dúvidas e tarefas cotidianas. Considere o histórico desta conversa para manter continuidade. Não use ferramentas, arquivos, comandos ou rede; não afirme ter executado ações externas. Use Markdown padrão quando útil; a resposta será adaptada para o WhatsApp.", assistantName)
+	} else {
+		persona = "Seu nome é " + assistantName + ". " + persona
+	}
+	provider, err := conversation.NewCodexTextWithThreadStore(os.Getenv("JARVIS_WHATSAPP_MODEL"), persona, whatsappThreadStore{db: routesDB})
+	if err != nil {
+		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
+	}
+	recognizer, err := whatsappSpeechRecognizer(config.Load())
+	if err != nil {
+		return err
+	}
 	router := messageRouter{
 		db:      routesDB,
 		project: strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OPENCODE_PROJECT")),
 		chat:    func(ctx context.Context, prompt string) string { return generateReply(ctx, provider, prompt) },
+		imageChat: func(ctx context.Context, prompt, mimeType string, data []byte) string {
+			return generateImageReply(ctx, provider, prompt, mimeType, data)
+		},
 	}
 	if router.project != "" {
 		bridgeURL := os.Getenv("JARVIS_OPENCODE_BRIDGE_URL")
@@ -141,7 +156,18 @@ func run(ctx context.Context) error {
 			default:
 			}
 		case *events.Message:
-			if incomingText(event) == "" {
+			if !isSelfChatSource(event.Info.MessageSource, owner, device.GetJID(), device.GetLID()) {
+				return
+			}
+			assistantMessage, err := isAssistantMessageID(ctx, routesDB, string(event.Info.ID))
+			if err != nil {
+				stopRouting(fmt.Errorf("verificar mensagem enviada pelo Jarvis: %w", err))
+				return
+			}
+			if assistantMessage {
+				return
+			}
+			if incomingText(event) == "" && !isVoiceNote(event) && !isImageMessage(event) {
 				return
 			}
 			select {
@@ -188,30 +214,197 @@ func run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return context.Cause(ctx)
 			}
+			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
-			if prompt == "" {
+			isImage := isImageMessage(event)
+			isVoice := !isImage && prompt == "" && isVoiceNote(event)
+			transcriptionFailed := false
+			imageFailed := false
+			imageMIME := ""
+			var imageData []byte
+			if isImage {
+				image := event.Message.GetImageMessage()
+				var imageErr error
+				imageMIME, imageErr = supportedWhatsAppImageMIME(image.GetMimetype())
+				if imageErr == nil && image.GetFileLength() > maxWhatsAppImageBytes {
+					imageErr = errors.New("imagem excede o limite de 10 MiB")
+				}
+				if imageErr == nil {
+					imageData, imageErr = client.Download(replyCtx, image)
+				}
+				if imageErr == nil && (len(imageData) == 0 || len(imageData) > maxWhatsAppImageBytes) {
+					imageErr = errors.New("tamanho de imagem inválido")
+				}
+				if imageErr != nil {
+					log.Print("Não foi possível receber a imagem do WhatsApp")
+					imageFailed = true
+				}
+			}
+			if isVoice {
+				transcript, sttErr := transcribeVoice(replyCtx, client, event, recognizer)
+				if sttErr != nil {
+					log.Print("Não foi possível transcrever nota de voz com o STT local")
+					prompt = "Não consegui transcrever essa nota de voz localmente. Tente um áudio mais curto ou envie texto."
+					transcriptionFailed = true
+				} else {
+					prompt = transcript
+				}
+			}
+			if prompt == "" && !isImage {
+				cancel()
 				continue
 			}
-			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			reply, err := router.reply(replyCtx, string(event.Info.ID), prompt)
+			var reply string
+			var routeErr error
+			if imageFailed {
+				reply = "Não consegui encaminhar essa imagem. Envie uma imagem JPEG, PNG ou WebP de até 10 MiB."
+			} else if isImage {
+				reply, routeErr = router.replyImage(replyCtx, string(event.Info.ID), prompt, imageMIME, imageData)
+			} else if transcriptionFailed {
+				reply = prompt
+			} else if isVoice {
+				reply, routeErr = router.replyTranscription(replyCtx, string(event.Info.ID), prompt)
+			} else {
+				reply, routeErr = router.reply(replyCtx, string(event.Info.ID), prompt)
+			}
+			modeCtx, cancelMode := context.WithTimeout(ctx, 5*time.Second)
+			codeMode, modeErr := router.codeMode(modeCtx)
+			cancelMode()
+			if routeErr == nil && modeErr != nil {
+				routeErr = modeErr
+			}
+			clear(imageData)
 			cancel()
-			if err != nil {
-				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", err)
+			if routeErr != nil {
+				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", routeErr)
 			}
 			if reply == "" {
 				continue
 			}
-			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			_, err = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
-			cancel()
-			if err != nil {
-				if prompt == "/code" {
+			parts := splitWhatsAppMessage(formatWhatsAppMarkdown(reply), 12*1024-160)
+			if codeMode && len(parts) > 0 {
+				parts[len(parts)-1] += "\n\n*OpenCode*"
+			}
+			var sendErr error
+			for _, part := range parts {
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				messageID := client.GenerateMessageID()
+				_, sendErr = routesDB.ExecContext(sendCtx, "INSERT OR IGNORE INTO jarvis_assistant_message_ids (message_id) VALUES (?)", string(messageID))
+				if sendErr == nil {
+					_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(part)}, whatsmeow.SendRequestExtra{ID: messageID})
+				}
+				cancel()
+				if sendErr != nil {
+					break
+				}
+			}
+			if sendErr != nil {
+				if !isVoice && !isImage && prompt == "/code" {
 					return fmt.Errorf("não consegui confirmar o modo pelo WhatsApp; roteamento interrompido")
 				}
 				log.Print("Falha ao enviar resposta no WhatsApp")
 			}
 		}
 	}
+}
+
+type whatsappThreadStore struct{ db *sql.DB }
+
+func (s whatsappThreadStore) Get(ctx context.Context) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, "SELECT thread_id FROM jarvis_codex_thread WHERE id = 1").Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+func (s whatsappThreadStore) Set(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO jarvis_codex_thread (id, thread_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET thread_id = excluded.thread_id", id)
+	return err
+}
+
+const maxWhatsAppVoiceBytes = 15 << 20
+const maxWhatsAppImageBytes = 10 << 20
+
+func whatsappSpeechRecognizer(cfg config.Config) (voice.SpeechRecognizer, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.VoiceSTTProvider)) {
+	case "", "command":
+		return voice.NewCommandSpeechRecognizer(cfg.VoiceSTTCommand, voice.ParseArgs(cfg.VoiceSTTArgs), cfg.VoiceSTTModel, cfg.VoiceSTTLanguage), nil
+	case "http":
+		if !isLoopbackURL(cfg.VoiceSTTURL) || (cfg.VoiceSTTStatusURL != "" && !isLoopbackURL(cfg.VoiceSTTStatusURL)) {
+			return nil, errors.New("o STT HTTP do WhatsApp precisa usar somente um endereço loopback local")
+		}
+		return voice.NewHTTPSpeechRecognizer(cfg.VoiceSTTURL, cfg.VoiceSTTStatusURL, cfg.VoiceSTTLanguage), nil
+	default:
+		return nil, errors.New("provedor de STT do WhatsApp inválido; use command ou HTTP local")
+	}
+}
+
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isVoiceNote(event *events.Message) bool {
+	return event != nil && event.Message != nil && event.Message.GetAudioMessage().GetPTT()
+}
+
+func isImageMessage(event *events.Message) bool {
+	return event != nil && event.Message != nil && event.Message.GetImageMessage() != nil
+}
+
+func whatsappAssistantName(raw string) string {
+	name := strings.NewReplacer("\r", " ", "\n", " ", ":", "").Replace(strings.TrimSpace(raw))
+	runes := []rune(name)
+	if len(runes) > 32 {
+		name = string(runes[:32])
+	}
+	if strings.TrimSpace(name) == "" {
+		return "Jarvis"
+	}
+	return name
+}
+
+func supportedWhatsAppImageMIME(raw string) (string, error) {
+	mediaType, _, err := mime.ParseMediaType(raw)
+	if err != nil {
+		return "", errors.New("tipo de imagem inválido")
+	}
+	switch strings.ToLower(mediaType) {
+	case "image/jpeg", "image/png", "image/webp":
+		return strings.ToLower(mediaType), nil
+	default:
+		return "", errors.New("tipo de imagem não suportado")
+	}
+}
+
+func transcribeVoice(ctx context.Context, client *whatsmeow.Client, event *events.Message, recognizer voice.SpeechRecognizer) (string, error) {
+	audio := event.Message.GetAudioMessage()
+	if audio.GetFileLength() > maxWhatsAppVoiceBytes || audio.GetSeconds() > 120 {
+		return "", errors.New("nota de voz excede o limite de 15 MiB ou 120 segundos")
+	}
+	data, err := client.Download(ctx, audio)
+	if err != nil {
+		return "", errors.New("download da nota de voz falhou")
+	}
+	defer clear(data)
+	if len(data) == 0 || len(data) > maxWhatsAppVoiceBytes {
+		return "", errors.New("tamanho da nota de voz inválido")
+	}
+	transcript, err := recognizer.Recognize(ctx, voice.AudioInput{Data: data, Format: audio.GetMimetype(), Language: "pt"})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(transcript), nil
 }
 
 // Reuse an existing single-account database only for its original owner.
@@ -269,23 +462,25 @@ func incomingText(event *events.Message) string {
 	if body == "" {
 		body = strings.TrimSpace(event.Message.GetExtendedTextMessage().GetText())
 	}
+	if body == "" {
+		body = strings.TrimSpace(event.Message.GetImageMessage().GetCaption())
+	}
 	return body
 }
 
 func selfPrompt(source types.MessageSource, owner, ownPhone, ownLID types.JID, body string) string {
-	if !source.IsFromMe || source.IsGroup || ownPhone.ToNonAD() != owner {
-		return ""
-	}
-	chat := source.Chat.ToNonAD()
-	if chat.IsEmpty() || (chat != ownPhone.ToNonAD() && chat != ownLID.ToNonAD()) {
-		return ""
-	}
-	// Replies can also arrive as events from the linked account. Never feed
-	// our own output back into inference, including after a restart.
-	if strings.HasPrefix(body, replyPrefix) {
+	if !isSelfChatSource(source, owner, ownPhone, ownLID) {
 		return ""
 	}
 	return body
+}
+
+func isSelfChatSource(source types.MessageSource, owner, ownPhone, ownLID types.JID) bool {
+	if !source.IsFromMe || source.IsGroup || ownPhone.ToNonAD() != owner {
+		return false
+	}
+	chat := source.Chat.ToNonAD()
+	return !chat.IsEmpty() && (chat == ownPhone.ToNonAD() || chat == ownLID.ToNonAD())
 }
 
 func generateReply(ctx context.Context, provider conversation.Provider, prompt string) string {
@@ -313,4 +508,38 @@ func generateReply(ctx context.Context, provider conversation.Provider, prompt s
 	}
 	log.Print("GPT indisponível para responder à mensagem do WhatsApp")
 	return "Não consegui obter uma resposta do GPT agora. Tente novamente daqui a pouco."
+}
+
+func generateImageReply(ctx context.Context, provider conversation.Provider, prompt, mimeType string, data []byte) string {
+	imageProvider, ok := provider.(conversation.ImageProvider)
+	if !ok {
+		return "O provedor Codex configurado não aceita imagens. A imagem não foi encaminhada."
+	}
+	if prompt == "" {
+		prompt = "Analise a imagem enviada."
+	}
+	var response strings.Builder
+	calls, err := imageProvider.StreamImage(ctx, []conversation.Message{{Role: "user", Content: prompt}}, mimeType, data, func(delta string) error {
+		response.WriteString(delta)
+		return nil
+	})
+	reply := strings.TrimSpace(response.String())
+	if err == nil && len(calls) == 0 && reply != "" {
+		return reply
+	}
+	if err == nil && len(calls) > 0 {
+		return "O Codex pediu uma ferramenta, mas o chat de imagens não permite executar ferramentas."
+	}
+	if failure, ok := err.(*conversation.Failure); ok {
+		switch failure.Code {
+		case "chatgpt_login_required", "authentication_required":
+			return "O GPT precisa que você entre novamente no ChatGPT no perfil Codex do Jarvis."
+		case "quota_exhausted":
+			return "O limite de uso do GPT foi atingido. Tente mais tarde."
+		case "model_unavailable":
+			return "O modelo GPT configurado está indisponível para esta conta."
+		}
+	}
+	log.Print("GPT indisponível para analisar a imagem do WhatsApp")
+	return "Não consegui obter uma resposta sobre a imagem agora. Tente novamente daqui a pouco."
 }

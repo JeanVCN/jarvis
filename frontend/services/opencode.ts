@@ -22,7 +22,7 @@ export type OpenCodeOperation = {
   id: string;
   project_id: string;
   session_id: string;
-  kind: "create_session" | "prompt" | "permission";
+  kind: "create_session" | "prompt" | "permission" | "form";
   input?: string;
   state: "submitting" | "accepted" | "running" | "completed" | "failed" | "uncertain";
   external_id?: string;
@@ -46,6 +46,18 @@ export type SessionDetail = {
     truncated?: boolean;
   }>;
   permissions: Array<{ id: string; action: string; resources: string[]; message?: string }>;
+  forms: Array<{
+    id: string;
+    title: string;
+    fields: Array<{
+      key: string;
+      title?: string;
+      description?: string;
+      type: "string" | "multiselect" | "integer" | "number" | "boolean";
+      custom?: boolean;
+      options?: Array<{ value: string; label: string; description?: string; recommended?: boolean }>;
+    }>;
+  }>;
 };
 export type JarvisSessionSnapshot = {
   session: JarvisSession;
@@ -129,5 +141,12 @@ export async function replyOpenCodePermission(
   return postJSON<{ operation: OpenCodeOperation }>(
     `/api/opencode/sessions/${encodeURIComponent(sessionID)}/permissions/${encodeURIComponent(requestID)}/reply`,
     { operation_id: operationID, decision },
+  );
+}
+
+export async function replyOpenCodeForm(sessionID: string, formID: string, operationID: string, answer: Record<string, string | number | boolean | string[]>) {
+  return postJSON<{ operation: OpenCodeOperation }>(
+    `/api/opencode/sessions/${encodeURIComponent(sessionID)}/forms/${encodeURIComponent(formID)}/reply`,
+    { operation_id: operationID, answer },
   );
 }

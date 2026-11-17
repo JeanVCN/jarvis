@@ -155,6 +155,7 @@ func RegisterOpenCode(router *gin.Engine, client *opencode.Client, store opencod
 		err = store.AcceptPrompt(persistCtx, op.ID, accepted.InboxID)
 		persistCancel()
 		if err != nil {
+			_ = store.MarkUncertain(context.Background(), op.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable", "operation_id": op.ID})
 			return
 		}
@@ -218,6 +219,67 @@ func RegisterOpenCode(router *gin.Engine, client *opencode.Client, store opencod
 		err = store.AcceptPermission(persistCtx, op.ID)
 		persistCancel()
 		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable", "operation_id": op.ID})
+			return
+		}
+		op.State = "completed"
+		c.JSON(http.StatusOK, gin.H{"operation": op})
+	})
+	router.POST("/api/opencode/sessions/:session/forms/:form/reply", func(c *gin.Context) {
+		if !writeEnabled {
+			c.JSON(http.StatusForbidden, gin.H{"error": "opencode_write_disabled"})
+			return
+		}
+		var request struct {
+			OperationID string         `json:"operation_id"`
+			Answer      map[string]any `json:"answer"`
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32*1024)
+		if c.ShouldBindJSON(&request) != nil || !validOperationID(request.OperationID) || !validFormAnswer(request.Answer) || len(c.Param("form")) == 0 || len(c.Param("form")) > 128 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_form_answer"})
+			return
+		}
+		op, created, err := store.StartForm(c.Request.Context(), request.OperationID, c.Param("session"), c.Param("form"), request.Answer)
+		if err != nil {
+			switch {
+			case errors.Is(err, opencode.ErrConflict):
+				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			case errors.Is(err, opencode.ErrSessionNotFound):
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			case errors.Is(err, opencode.ErrSessionUnavailable):
+				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable"})
+			}
+			return
+		}
+		if !created {
+			c.JSON(http.StatusOK, gin.H{"operation": op})
+			return
+		}
+		link, err := store.Session(c.Request.Context(), op.SessionID)
+		if err != nil || link.ExternalID == nil {
+			_ = store.MarkUncertain(context.Background(), op.ID)
+			c.JSON(http.StatusAccepted, gin.H{"operation": gin.H{"id": op.ID, "session_id": op.SessionID, "kind": op.Kind, "state": "uncertain"}})
+			return
+		}
+		callCtx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		err = client.ReplyForm(callCtx, op.ProjectID, *link.ExternalID, c.Param("form"), op.ID, request.Answer)
+		cancel()
+		if err != nil {
+			markErr := store.MarkUncertain(context.Background(), op.ID)
+			if markErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable", "operation_id": op.ID})
+				return
+			}
+			c.JSON(http.StatusAccepted, gin.H{"operation": gin.H{"id": op.ID, "project_id": op.ProjectID, "session_id": op.SessionID, "kind": op.Kind, "state": "uncertain"}})
+			return
+		}
+		persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = store.AcceptForm(persistCtx, op.ID)
+		persistCancel()
+		if err != nil {
+			_ = store.MarkUncertain(context.Background(), op.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable", "operation_id": op.ID})
 			return
 		}
@@ -342,6 +404,25 @@ func reconcileSessionOperations(c *gin.Context, store opencode.Store, link openc
 		if operation.State == "completed" || operation.State == "failed" {
 			continue
 		}
+		if operation.Kind == "form" {
+			pending := false
+			if operation.ExternalID != nil {
+				for _, form := range detail.Forms {
+					if form.ID == *operation.ExternalID {
+						pending = true
+						break
+					}
+				}
+			}
+			state := "completed"
+			if pending {
+				state = "uncertain"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_ = store.ReconcileOperation(ctx, operation.ID, state, nil)
+			cancel()
+			continue
+		}
 		if operation.Kind == "interrupt" {
 			state := "accepted"
 			if detail.State != "running" {
@@ -397,6 +478,36 @@ func reconcileSessionOperations(c *gin.Context, store opencode.Store, link openc
 		_ = store.ReconcileOperation(ctx, operation.ID, state, externalID)
 		cancel()
 	}
+}
+
+func validFormAnswer(answer map[string]any) bool {
+	if len(answer) == 0 || len(answer) > 16 {
+		return false
+	}
+	for key, value := range answer {
+		if strings.TrimSpace(key) == "" || len(key) > 128 {
+			return false
+		}
+		switch item := value.(type) {
+		case string:
+			if len(item) > 8000 {
+				return false
+			}
+		case bool, float64:
+		default:
+			items, ok := item.([]any)
+			if !ok || len(items) > 32 {
+				return false
+			}
+			for _, entry := range items {
+				text, ok := entry.(string)
+				if !ok || len(text) > 8000 {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func validOperationID(value string) bool {
