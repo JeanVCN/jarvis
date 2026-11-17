@@ -156,6 +156,40 @@ Referências oficiais a conferir em A0: [início Android](https://developers.hom
 [tipos suportados](https://developers.home.google.com/apis/android/supported-device-types)
 e [comandos](https://developers.home.google.com/apis/android/device/control).
 
+## Canal pessoal via WhatsApp
+
+`backend/whatsapp` é um processo Go independente. O dispositivo vinculado
+via `whatsmeow` recebe eventos por uma conexão de saída. A entrada aceita
+apenas o chat **Você** da conta pareada cujo número coincide com a
+configuração. O processo envia as respostas pela mesma conexão, com marca
+`Jarvis:` para evitar respostas em loop.
+
+| Entrada | Destino |
+|---|---|
+| `/code` digitado | Alternância local e persistida. O comando não aciona inferência. |
+| Texto no chat normal | OpenAI pelo perfil Codex autenticado, via adaptador de `internal/conversation`. |
+| Texto no modo OpenCode | `internal/opencode.Client` → bridge HTTP com token em loopback → sessão do projeto permitido. A resposta volta direto ao WhatsApp. |
+
+O SQLite guarda estado do dispositivo, modo, vínculos com sessões e IDs de
+mensagem por conta. O canal ainda não integra o histórico e a memória do
+Core. A sessão OpenCode tem contexto próprio e pode enviar dados ao modelo
+configurado nela. A API do Core, o frontend e o Tailscale são independentes
+do canal WhatsApp. Etapas futuras de histórico e voz estão no
+[roadmap](ROADMAP.md#prioridade-atual--jarvis-pessoal-no-whatsapp).
+
+### Entradas planejadas e fronteira de atuação
+
+As notas de voz passam por STT local para identificar o destino. A invocação
+de IoT, digitada como `/cmd` ou falada explicitamente, seleciona o catálogo
+local para um único turno. Comandos exatos podem ser resolvidos diretamente,
+e o Ollama local pode interpretar linguagem natural em formato estruturado.
+A proposta passa pela autorização de conta e pela validação de dispositivo,
+operação e parâmetros no Core antes de chegar ao executor físico. GPT e
+OpenCode continuam com suas rotas próprias e sem autoridade para chamar esse
+executor. O módulo de imagens pertence ao chat normal e trata conteúdo
+extraído como dados, sem interpretá-lo como comandos de atuação.
+
+
 ## Documentação das fases anteriores
 
 ## Estrutura Atual

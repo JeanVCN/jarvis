@@ -224,6 +224,65 @@ func RegisterOpenCode(router *gin.Engine, client *opencode.Client, store opencod
 		op.State = "completed"
 		c.JSON(http.StatusOK, gin.H{"operation": op})
 	})
+	router.POST("/api/opencode/sessions/:session/interrupt", func(c *gin.Context) {
+		if !writeEnabled {
+			c.JSON(http.StatusForbidden, gin.H{"error": "opencode_write_disabled"})
+			return
+		}
+		var request struct {
+			OperationID string `json:"operation_id"`
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
+		if c.ShouldBindJSON(&request) != nil || !validOperationID(request.OperationID) || !validOperationID(c.Param("session")) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_interrupt_request"})
+			return
+		}
+		op, created, err := store.StartInterrupt(c.Request.Context(), request.OperationID, c.Param("session"))
+		if err != nil {
+			switch {
+			case errors.Is(err, opencode.ErrConflict):
+				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			case errors.Is(err, opencode.ErrSessionNotFound):
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			case errors.Is(err, opencode.ErrSessionUnavailable):
+				c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable"})
+			}
+			return
+		}
+		if !created {
+			c.JSON(http.StatusOK, gin.H{"operation": op})
+			return
+		}
+		link, err := store.Session(c.Request.Context(), op.SessionID)
+		if err != nil || link.ExternalID == nil {
+			_ = store.MarkUncertain(context.Background(), op.ID)
+			c.JSON(http.StatusAccepted, gin.H{"operation": gin.H{"id": op.ID, "session_id": op.SessionID, "kind": op.Kind, "state": "uncertain"}})
+			return
+		}
+		callCtx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		err = client.Interrupt(callCtx, op.ProjectID, *link.ExternalID, op.ID)
+		cancel()
+		if err != nil {
+			markErr := store.MarkUncertain(context.Background(), op.ID)
+			if markErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable", "operation_id": op.ID})
+				return
+			}
+			c.JSON(http.StatusAccepted, gin.H{"operation": gin.H{"id": op.ID, "project_id": op.ProjectID, "session_id": op.SessionID, "kind": op.Kind, "state": "uncertain"}})
+			return
+		}
+		persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = store.AcceptInterrupt(persistCtx, op.ID)
+		persistCancel()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable", "operation_id": op.ID})
+			return
+		}
+		op.State = "accepted"
+		c.JSON(http.StatusAccepted, gin.H{"operation": op, "notice": "interrupt_requested_not_undo"})
+	})
 	router.GET("/api/opencode/sessions/:session", func(c *gin.Context) {
 		if !validOperationID(c.Param("session")) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_session_id"})
@@ -234,16 +293,25 @@ func RegisterOpenCode(router *gin.Engine, client *opencode.Client, store opencod
 			c.JSON(http.StatusNotFound, gin.H{"error": "opencode_session_not_found"})
 			return
 		}
-		if link.State == "uncertain" && link.ExternalID == nil {
+		// The Core can stop after OpenCode creates the session but before the
+		// local journal records the result. Recover by lookup without resubmitting.
+		if link.ExternalID == nil && (link.State == "creating" || link.State == "uncertain") {
 			lookupCtx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 			created, lookupErr := client.FindCreatedSession(lookupCtx, link.ProjectID, link.ID)
 			cancel()
 			if lookupErr == nil && created != nil {
 				persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if store.AcceptSession(persistCtx, link.ID, created.ID, created.Title) == nil {
-					link, _ = store.Session(c.Request.Context(), link.ID)
-				}
+				err = store.AcceptSession(persistCtx, link.ID, created.ID, created.Title)
 				persistCancel()
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable"})
+					return
+				}
+				link, err = store.Session(c.Request.Context(), link.ID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "storage_unavailable"})
+					return
+				}
 			}
 		}
 		var detail *opencode.SessionDetail
@@ -271,7 +339,20 @@ func reconcileSessionOperations(c *gin.Context, store opencode.Store, link openc
 		return
 	}
 	for _, operation := range operations {
-		if operation.Kind != "prompt" || operation.State == "completed" || operation.State == "failed" {
+		if operation.State == "completed" || operation.State == "failed" {
+			continue
+		}
+		if operation.Kind == "interrupt" {
+			state := "accepted"
+			if detail.State != "running" {
+				state = "completed"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_ = store.ReconcileOperation(ctx, operation.ID, state, nil)
+			cancel()
+			continue
+		}
+		if operation.Kind != "prompt" {
 			continue
 		}
 		inboxID := ""

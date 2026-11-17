@@ -113,6 +113,13 @@ export async function sendOpenCodePrompt(sessionID: string, operationID: string,
   );
 }
 
+export async function interruptOpenCodeSession(sessionID: string, operationID: string) {
+  return postJSON<{ operation: OpenCodeOperation; notice?: string }>(
+    `/api/opencode/sessions/${encodeURIComponent(sessionID)}/interrupt`,
+    { operation_id: operationID },
+  );
+}
+
 export async function replyOpenCodePermission(
   sessionID: string,
   requestID: string,

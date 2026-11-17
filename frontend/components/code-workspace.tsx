@@ -9,6 +9,7 @@ import {
   getOpenCodeProjects,
   getOpenCodeSessions,
   getOpenCodeStatus,
+  interruptOpenCodeSession,
   replyOpenCodePermission,
   sendOpenCodePrompt,
   type JarvisSession,
@@ -185,6 +186,25 @@ export function CodeWorkspace() {
     }
   }
 
+  async function interruptSession() {
+    if (!selectedSession || !status?.write_enabled || working) return;
+    setWorking(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await interruptOpenCodeSession(selectedSession, newOperationID());
+      setNotice(result.notice === "interrupt_requested_not_undo"
+        ? "Interrupção solicitada. Isso não desfaz alterações já feitas pela tarefa."
+        : "Interrupção solicitada ao OpenCode.");
+      await refreshSelected();
+    } catch {
+      setError("Não foi possível confirmar a interrupção. Reconcilie a sessão; a tarefa pode ter continuado ou parado.");
+      await refreshSelected().catch(() => undefined);
+    } finally {
+      setWorking(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100 sm:px-8">
       <div className="mx-auto max-w-4xl">
@@ -205,7 +225,7 @@ export function CodeWorkspace() {
               : error || "Verificando serviço local…"}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            {status?.write_enabled ? "Criação de sessões e prompts habilitados pelo servidor." : "Modo somente leitura. O servidor não habilitou envios."}
+            {status?.write_enabled ? "Sessões, prompts e interrupção habilitados pelo servidor." : "Modo somente leitura. O servidor não habilitou envios."}
           </p>
         </section>
 
@@ -269,6 +289,16 @@ export function CodeWorkspace() {
                   {snapshot?.detail?.session.state === "running" ? "OpenCode está trabalhando" : snapshot?.detail?.session.outcome ?? snapshot?.session.state ?? "Carregando estado…"}
                 </p>
               </div>
+              {snapshot?.detail?.session.state === "running" ? (
+                <button
+                  type="button"
+                  onClick={() => void interruptSession()}
+                  disabled={!status?.write_enabled || working}
+                  className="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 hover:bg-amber-950 disabled:opacity-50"
+                >
+                  Interromper tarefa
+                </button>
+              ) : null}
               {snapshot?.operations.some((operation) => operation.state === "uncertain") ? (
                 <button type="button" onClick={() => void reconcile()} disabled={working} className="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 disabled:opacity-50">
                   Reconciliar sem reenviar

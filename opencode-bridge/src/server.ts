@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { OpenCode } from "@opencode/client";
 import { Service } from "@opencode/client/service";
 import { loadAllowedProjects } from "./projects.js";
-import { createProjectSession, findCreatedSession, readProjectSession, replyProjectPermission, sendProjectPrompt, validOperationID } from "./workflow.js";
+import { createProjectSession, findCreatedSession, interruptProjectSession, readProjectSession, replyProjectPermission, sendProjectPrompt, validOperationID } from "./workflow.js";
 
 const port = Number(process.env.JARVIS_OPENCODE_BRIDGE_PORT ?? "18110");
 const token = process.env.JARVIS_OPENCODE_BRIDGE_TOKEN ?? "";
@@ -253,6 +253,51 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       if (error instanceof Error && (error.message === "session_not_in_project" || error.message === "permission_not_pending")) {
         json(response, 404, { error: "permission_not_pending" });
+        return;
+      }
+      json(response, 502, { error: "opencode_request_failed" });
+    }
+    return;
+  }
+
+  const interruptMatch = url.pathname.match(/^\/v1\/projects\/([a-z0-9_-]+)\/sessions\/([^/]+)\/interrupt$/);
+  if (request.method === "POST" && interruptMatch) {
+    if (!writeEnabled) {
+      json(response, 403, { error: "opencode_write_disabled" });
+      return;
+    }
+    const project = projectByID(interruptMatch[1]);
+    if (!project) {
+      json(response, 404, { error: "project_not_found" });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readBody(request);
+    } catch (error) {
+      json(response, error instanceof Error && error.message === "request_too_large" ? 413 : 400, { error: "invalid_request" });
+      return;
+    }
+    const operationID = body && typeof body === "object" && "operation_id" in body ? body.operation_id : undefined;
+    if (!validOperationID(operationID)) {
+      json(response, 400, { error: "invalid_operation_id" });
+      return;
+    }
+    try {
+      const client = await openCodeClient();
+      if (!client) {
+        json(response, 503, { error: "opencode_unavailable" });
+        return;
+      }
+      await interruptProjectSession(client, project, decodeURIComponent(interruptMatch[2]));
+      json(response, 202, { status: "interrupt_requested" });
+    } catch (error) {
+      if (error instanceof Error && error.message === "session_not_in_project") {
+        json(response, 404, { error: "session_not_found" });
+        return;
+      }
+      if (error instanceof Error && error.message === "session_not_running") {
+        json(response, 409, { error: "session_not_running" });
         return;
       }
       json(response, 502, { error: "opencode_request_failed" });

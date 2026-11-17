@@ -15,10 +15,13 @@ func TestCodexProtocolKeepsToolsInCore(t *testing.T) {
 for line in sys.stdin:
  r=json.loads(line); method=r.get('method'); result={}
  if method=='account/read': result={'account':{'type':'chatgpt'}}
- if method=='thread/start': result={'thread':{'id':'thread1'}}
+ if method=='thread/start':
+  text_only='calculator' not in r['params']['baseInstructions']
+  result={'thread':{'id':'thread1'}}
  if method=='turn/start': result={'turn':{'id':'turn1'}}
  if method=='turn/start':
   content='Olá!'
+  if 'CASE_TEXT_ONLY' in str(r) and not text_only: content='Instruções incorretas'
   if 'CASE_TOOL' in str(r): content='{"jarvis_tool":"calculator","input":"25 * 4"}'
   if 'CASE_NATIVE' in str(r):
    print(json.dumps({'id':99,'method':'command/exec','params':{}}),flush=True)
@@ -38,10 +41,10 @@ for line in sys.stdin:
 		input  string
 		calls  int
 		failed bool
-	}{{"normal", 0, false}, {"CASE_TOOL", 1, false}, {"CASE_NATIVE", 0, true}} {
+	}{{"normal", 0, false}, {"CASE_TEXT_ONLY", 0, false}, {"CASE_TOOL", 1, false}, {"CASE_NATIVE", 0, true}} {
 		t.Run(tc.input, func(t *testing.T) {
 			var output strings.Builder
-			calls, e := (Codex{Home: home, Binary: bin}).Stream(context.Background(), []Message{{Role: "user", Content: tc.input}}, func(s string) error { output.WriteString(s); return nil })
+			calls, e := (Codex{Home: home, Binary: bin, textOnly: tc.input == "CASE_TEXT_ONLY"}).Stream(context.Background(), []Message{{Role: "user", Content: tc.input}}, func(s string) error { output.WriteString(s); return nil })
 			if (e != nil) != tc.failed {
 				t.Fatalf("unexpected error: %v", e)
 			}
@@ -51,7 +54,7 @@ for line in sys.stdin:
 			if tc.calls == 1 && (calls[0].Function.Name != "calculator" || output.Len() != 0) {
 				t.Fatalf("tool envelope was spoken or lost: %v %s", calls, output.String())
 			}
-			if tc.input == "normal" && output.String() != "Olá!" {
+			if (tc.input == "normal" || tc.input == "CASE_TEXT_ONLY") && output.String() != "Olá!" {
 				t.Fatal(output.String())
 			}
 		})

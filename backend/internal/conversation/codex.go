@@ -15,9 +15,20 @@ import (
 	"sync"
 )
 
-type Codex struct{ Model, Home, Binary string }
+type Codex struct {
+	Model, Home, Binary string
+	textOnly            bool
+}
 
 func NewCodex(model string) (Provider, error) {
+	return newCodex(model, false)
+}
+
+func NewCodexText(model string) (Provider, error) {
+	return newCodex(model, true)
+}
+
+func newCodex(model string, textOnly bool) (Provider, error) {
 	home := os.Getenv("JARVIS_CODEX_HOME")
 	if os.Getenv("JARVIS_CODEX_ENABLED") != "true" || !filepath.IsAbs(home) {
 		return nil, &Failure{Code: "codex_activation_required"}
@@ -26,7 +37,7 @@ func NewCodex(model string) (Provider, error) {
 	if bin == "" {
 		bin = "codex"
 	}
-	return Codex{Model: model, Home: home, Binary: bin}, nil
+	return Codex{Model: model, Home: home, Binary: bin, textOnly: textOnly}, nil
 }
 func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string) error) ([]Call, error) {
 	work, e := os.MkdirTemp("", "jarvis-codex-")
@@ -108,6 +119,9 @@ func (p Codex) Stream(ctx context.Context, messages []Message, emit func(string)
 		return nil, &Failure{Code: "chatgpt_login_required"}
 	}
 	params := map[string]any{"cwd": work, "ephemeral": true, "sandbox": "read-only", "approvalPolicy": "never", "baseInstructions": "Você é o Jarvis. Não use ferramentas nativas, arquivos, comandos ou rede. Responda em português, com texto curto. Quando precisar de uma ferramenta Jarvis, responda SOMENTE JSON: {\"jarvis_tool\":\"calculator\",\"input\":\"25 * 4\"}. Ferramentas permitidas: calculator e time. Resultados estarão no contexto; nunca invente execução."}
+	if p.textOnly {
+		params["baseInstructions"] = "Você é o Jarvis. Responda em português com texto curto. Use apenas o conteúdo da mensagem recebida. Não use ferramentas, arquivos, comandos ou rede."
+	}
 	if p.Model != "" {
 		params["model"] = p.Model
 	}

@@ -715,7 +715,7 @@ Referências V2: `https://opencode.ai/docs/build/client/`,
 `https://opencode.ai/docs/api/`, `https://opencode.ai/docs/cli/web/`,
 `https://opencode.ai/docs/permissions/` e `https://opencode.ai/docs/policies/`.
 
-### 2026-11-16 - Gate de piloto remoto antes do retorno à IoT
+### 2026-11-16 - Gate de piloto remoto da interface web antes do retorno à IoT
 
 Status: sequência recomendada; validação ainda pendente.
 
@@ -729,3 +729,40 @@ Status: sequência recomendada; validação ainda pendente.
 - Depois desse gate, pode-se devolver prioridade à IoT se houver Android. Sem o
   aparelho, OAuth, descoberta da lâmpada e teste físico seguem bloqueados; não
   marcar integração residencial como retomada apenas por atualizar documentação.
+
+
+### 2026-11-16 - WhatsApp pessoal e roteamento explícito
+
+Status: aceita. Texto e alternância implementados, piloto real pendente.
+
+- O Jarvis terá implementação própria para uso pessoal. A conta vinculada
+  só aciona o Jarvis em sua própria conversa **Você**. Cada conta tem
+  credenciais e modo separados.
+- O modo normal usa GPT autenticado no perfil Codex. O comando local
+  `/code` alterna o destino para uma sessão OpenCode no notebook. Uma falha
+  no modo OpenCode produz aviso e preserva o destino escolhido.
+- O canal funciona com conexões de saída e bridge em loopback. O escopo
+  de processamento do Jarvis é limitado ao chat autorizado, mas as
+  credenciais do dispositivo vinculado continuam sensíveis. `whatsmeow`
+  é não oficial e o piloto deve observar desconexões e restrições de conta.
+- A conexão local reduz a exposição de rede. O modelo remoto escolhido no
+  OpenCode ainda pode receber prompt, arquivos ou saídas incluídas na tarefa.
+  Aprovações do OpenCode seguem sob controle local.
+- Histórico compartilhado e notas de voz serão evoluídos após a primeira
+  validação do transporte. Ver o plano e os critérios em [ROADMAP.md](ROADMAP.md).
+
+
+### 2026-11-16 - Comando de IoT local por mensagem
+
+Status: planejada.
+
+- Separar conversa, código e atuação em dispositivos. `/cmd` ou invocação
+  de voz seleciona IoT apenas para a mensagem atual e preserva o modo
+  `/code`. STT local identifica a invocação antes de qualquer envio remoto.
+- Ollama pode propor uma ação de um catálogo fechado. O Core autoriza a
+  conta, resolve o dispositivo, valida os parâmetros e aplica a política de
+  confirmação antes de executar. GPT, OpenCode e conteúdo lido de imagens
+  ficam sem acesso a esse executor.
+- A interpretação fica no notebook. A comunicação com o dispositivo depende
+  do conector residencial escolhido. A trilha A0–A5 mantém a validação real
+  de pareamento, permissões e transporte do dispositivo.

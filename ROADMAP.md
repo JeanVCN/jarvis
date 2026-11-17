@@ -4,7 +4,110 @@ Roadmap vivo do projeto Jarvis.
 
 Este arquivo deve ser atualizado quando funcionalidades forem concluidas, iniciadas ou replanejadas.
 
-## Avaliação de prontidão — 2026-11-16
+## Prioridade atual — Jarvis pessoal no WhatsApp
+
+**Objetivo.** Conversar com o Jarvis, delegar tarefas ao OpenCode e acionar
+dispositivos autorizados no chat **Você** do próprio número. O Jarvis continua sendo uma implementação própria,
+voltada ao uso pessoal. OpenClaw e Talon são referências. Uma eventual
+integração para a empresa é uma avaliação separada.
+
+### 1. Texto e OpenCode — implementado, aguardando piloto real
+
+- `backend/whatsapp` usa `whatsmeow` como dispositivo vinculado. Cada conta tem
+  pareamento separado e só processa seu próprio chat **Você**. Outro número
+  pode ser pareado com a mesma regra, mantendo os vínculos anteriores.
+- Texto comum vai ao GPT autenticado pelo perfil Codex do Jarvis. Cada
+  mensagem do chat normal é um turno independente nesta etapa.
+- O comando digitado `/code` alterna para uma sessão do OpenCode no projeto
+  configurado na allowlist. Um novo `/code` volta ao chat normal. O Jarvis
+  confirma a troca e guarda modo e vínculo de sessão por conta. O resultado
+  volta pelo mesmo chat. A indisponibilidade do OpenCode mantém o modo ativo
+  e gera um aviso. Nenhuma mensagem desse modo é redirecionada ao GPT normal.
+- O canal usa conexões de saída e o bridge do OpenCode em loopback. O piloto
+  pelo WhatsApp dispensa API pública, webhook, acesso remoto pela rede local
+  e Tailscale. Tailscale fica como opção para o piloto separado da interface web.
+- O SQLite do canal guarda credenciais de pareamento, modo, vínculo de sessão
+  e IDs para deduplicação. O texto do WhatsApp ainda não é gravado nesse banco
+  como histórico. O OpenCode mantém o contexto das próprias sessões.
+
+**Critério de saída.** Quando o notebook estiver disponível, parear pelo QR,
+confirmar uma resposta do GPT autenticado e provar que outros chats e grupos
+são ignorados. Com OpenCode real rodando em loopback e um projeto descartável
+na allowlist, ativar `/code`, enviar uma tarefa, conferir o resultado e
+confirmar que as aprovações pendentes continuam sob controle local. Reiniciar
+o processo para verificar persistência do modo e da sessão. Desligar o bridge
+para verificar o aviso e a ausência de fallback. Alternar de volta e confirmar
+a resposta normal do GPT. Build e testes simulados já passaram. Este piloto
+real ainda está pendente.
+
+### 2. Histórico e memória — depois do piloto de texto
+
+- Vincular eventos e respostas do chat normal ao histórico do Jarvis no
+  PostgreSQL. Definir a identidade da conversa separadamente do número
+  pareado e quais contas autorizadas podem usar essa mesma memória.
+- Manter o contexto de tarefas no OpenCode. Definir quais metadados da
+  delegação devem aparecer no Jarvis e quais resultados podem entrar na
+  memória do chat normal, com uma decisão explícita antes de cruzar os contextos.
+
+### Evolução de voz — proposta para o mesmo chat
+
+- Uma nota de voz entra pelo mesmo canal. Reaproveitar o STT existente e
+  começar com Whisper `small` local em PT-BR. Se errar nomes, siglas ou
+  comandos com frequência, comparar com Whisper Large v3 Turbo na camada
+  gratuita da Groq. A opção remota exige escolha explícita porque envia o
+  áudio ao provedor. O GPT autenticado via Codex App Server continua
+  recebendo texto.
+- No modo OpenCode, encaminhar a transcrição à sessão existente e responder
+  por texto. No modo normal, uma invocação explícita no começo da fala, como
+  “OpenCode, roda os testes”, encaminha só aquela tarefa. Se o destino ficar
+  ambíguo ou a transcrição falhar, confirmar o destino ou pedir outro áudio.
+  O modo persistente muda somente com o `/code` digitado. Detectar intenções
+  de IoT com transcrição local antes de considerar qualquer provedor remoto.
+  Se o áudio não puder ser classificado localmente, pedir um comando escrito
+  ou outro áudio.
+- Resposta em nota de voz fica para o chat normal. As permissões de execução
+  do OpenCode continuam valendo para tarefas ditadas. Validar com gravações
+  reais em português antes de escolher STT/TTS.
+
+### Imagens — proposta para o chat normal
+
+- Receber foto com legenda e responder à pergunta sobre a imagem. Começar
+  avaliando OCR local quando a tarefa for extrair texto. Comparar um modelo
+  visual local compatível com o notebook com uma opção multimodal remota,
+  sujeita à escolha explícita de enviar a imagem. O adaptador atual do
+  WhatsApp só encaminha texto.
+- Validar tipo, tamanho e dimensões antes de processar. Manter imagens
+  temporárias fora do histórico por padrão. Texto lido da imagem é conteúdo da
+  conversa. QR, OCR e instruções dentro da imagem nunca acionam dispositivos.
+  Anexos para OpenCode ficam para uma etapa própria.
+
+### Ações locais — `/cmd` de um único turno
+
+- `/cmd ligar a luz da sala` ou uma invocação explícita no início da nota de
+  voz, como “Jarvis, comando: ligar a luz da sala”, seleciona o caminho de IoT
+  para aquela mensagem. A frase exata deve ser validada com gravações reais.
+  O comando tem precedência sobre o modo de texto atual e, ao terminar,
+  preserva o modo anterior.
+- Usar correspondência direta para comandos configurados e Ollama local
+  quando precisar interpretar linguagem natural. A saída é apenas uma
+  proposta estruturada de ação, com dispositivo, operação e parâmetros.
+  O áudio, a transcrição e a resolução de IoT permanecem fora do GPT e do
+  OpenCode. Uma falha no STT ou no Ollama não redireciona o pedido.
+- O Core valida a conta pareada autorizada para IoT, resolve o apelido para
+  um dispositivo cadastrado e checa a operação e os parâmetros permitidos.
+  Recusa ações fora do catálogo e pede esclarecimento para destino ambíguo.
+  O executor aceita somente operações tipadas já configuradas.
+- Começar com consulta de estado e ação explícita de ligar/desligar uma
+  lâmpada cadastrada. Exigir confirmação separada para operações de maior
+  impacto. Vincular a confirmação à conta, à ação exata e à validade do
+  pedido. Registrar execução e resultado, deduplicar pelo ID da mensagem
+  e consultar o estado após timeout antes de decidir sobre nova tentativa.
+- Testar primeiro com executor simulado. Verificar que perguntas comuns,
+  saídas de modelos, imagens, mensagens duplicadas e contas sem autorização
+  de IoT jamais atuam sobre dispositivos. O piloto físico depende da ponte
+  residencial e das permissões do dispositivo. Ver fases A0–A5.
+
+## Avaliação de prontidão da interface web — 2026-11-16
 
 **Conclusão:** estamos perto em termos de implementação, mas ainda não temos
 desenvolvimento remoto comprovado/operacional. A primeira fatia completa existe
@@ -25,8 +128,9 @@ abaixo.
   resposta/diff e aprovações `once`/`reject`. Core e bridge exigem o flag de escrita;
   ambos ficam desligados por padrão. Testes automatizados cobrem contratos com
   mocks, não comportamento real do OpenCode.
-- Continuação é por polling. Stream de eventos e interrupção explícita ainda não
-  existem; não impedem uma prova controlada, mas são trabalho posterior.
+- Continuação é por polling. A interrupção explícita agora existe na UI/Core/bridge
+  com journal e reconciliação por estado da sessão; falta validá-la no OpenCode
+  real. Stream de eventos permanece posterior.
 
 ### Gate para declarar “programar à distância” utilizável
 
@@ -47,7 +151,7 @@ descoberta real e validação da lâmpada não foram executados. Sem Android, po
 retomar apenas planejamento/documentação, não afirmar progresso de integração.
 Detalhes e sequência em A0–A5 abaixo.
 
-## Prioridade atual — integração Jarvis ↔ OpenCode
+## Trilha complementar — interface web Jarvis ↔ OpenCode
 
 Objetivo: permitir que o usuário programe pelo celular usando a interface do
 Jarvis. O Jarvis recebe tarefas, encaminha-as ao OpenCode executando no

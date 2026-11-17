@@ -100,7 +100,12 @@ func NewClient(baseURL, token string) (*Client, error) {
 	return &Client{
 		baseURL: parsed,
 		token:   token,
-		http:    &http.Client{Timeout: 5 * time.Second},
+		http: &http.Client{
+			Timeout: 5 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}, nil
 }
 
@@ -190,6 +195,16 @@ func (c *Client) ReplyPermission(ctx context.Context, projectID, sessionID, requ
 	}
 	body := map[string]string{"operation_id": operationID, "decision": decision}
 	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/permissions/" + url.PathEscape(requestID) + "/reply"
+	var result map[string]any
+	return c.post(ctx, path, body, &result)
+}
+
+func (c *Client) Interrupt(ctx context.Context, projectID, sessionID, operationID string) error {
+	if !projectIDPattern.MatchString(projectID) || sessionID == "" || !validOperationID(operationID) {
+		return errors.New("opencode_request_invalid")
+	}
+	body := map[string]string{"operation_id": operationID}
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/sessions/" + url.PathEscape(sessionID) + "/interrupt"
 	var result map[string]any
 	return c.post(ctx, path, body, &result)
 }
