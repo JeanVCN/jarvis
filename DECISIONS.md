@@ -816,6 +816,31 @@ Impacto:
 - Modelos selecionados precisam suportar visão. Compatibilidade, qualidade,
   latência e retenção de conteúdo devem ser confirmadas no piloto real.
 
+### 2026-11-17 - Instâncias WhatsApp simultâneas e formatação de respostas
+
+Status: implementado; execução concorrente em dois aparelhos e exibição real
+do Markdown continuam pendentes de piloto.
+
+Decisão:
+
+- Rodar uma instância do processo por número, com `JARVIS_WHATSAPP_OWNER`
+  distinto. O banco local separado por número mantém credenciais do aparelho,
+  modo, sessão OpenCode e thread Codex independentes.
+- Configurar `JARVIS_WHATSAPP_NAME` e `JARVIS_WHATSAPP_PERSONA` por processo.
+  As instâncias podem usar o mesmo `JARVIS_CODEX_HOME` para reutilizar a conta
+  OAuth, sem reutilizar thread ou contexto conversacional entre números.
+- Converter Markdown comum (títulos, listas, ênfase, links, tabelas e código)
+  para o formato de WhatsApp e fragmentar respostas extensas em mensagens
+  menores com os blocos de código balanceados.
+
+Impacto:
+
+- Exige dois processos ativos e dois números vinculados; não se deve iniciar
+  mais de um processo para o mesmo número. Recursos de apresentação e limites
+  de tamanho precisam ser confirmados em aparelhos reais.
+- Usar um mesmo perfil Codex em processos concorrentes ainda precisa de
+  validação prática, especialmente persistência de threads e bloqueios locais.
+
 
 ### 2026-11-16 - Comando de IoT local por mensagem
 

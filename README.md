@@ -417,17 +417,19 @@ cd backend/whatsapp
 JARVIS_WHATSAPP_OWNER=5544XXXXXXXXX go run .
 ```
 
-Use seu número com país e DDD. Em **Aparelhos conectados**, escaneie o QR
-com essa mesma conta. Espere aparecer `WhatsApp conectado` e mande texto
-comum no chat **Você**. Só esse chat do número configurado recebe resposta.
-O Jarvis identifica suas respostas com `Jarvis:` e ignora mensagens com
-essa marca para evitar loops.
+Use o número do aparelho que será vinculado, com país e DDD. Em **Aparelhos
+conectados**, escaneie o QR nessa conta. Espere aparecer `WhatsApp conectado`
+e mande texto comum no chat **Você**. Só esse chat do número configurado
+recebe resposta. Cada resposta começa com o nome configurado em
+`JARVIS_WHATSAPP_NAME` (padrão `Jarvis:`); essa marca também impede que a
+resposta do próprio assistente seja processada de novo.
 
 O modelo segue o padrão do perfil Codex. Para selecionar outro modelo
 elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. O chat normal mantém
 uma thread Codex persistente por conta vinculada. O Jarvis guarda somente o ID
 dessa thread no SQLite; o histórico do modelo fica no `CODEX_HOME` do perfil
-Codex. Personalize o contexto inicial com `JARVIS_WHATSAPP_PERSONA`.
+Codex. Personalize o contexto inicial com `JARVIS_WHATSAPP_PERSONA` e defina
+`JARVIS_WHATSAPP_NAME` para dar nome próprio à instância.
 
 Notas de voz (PTT) de até 120 segundos e 15 MiB são baixadas em memória e
 transcritas pelo STT local configurado em `VOICE_STT_COMMAND` e
@@ -449,15 +451,40 @@ imagens. O Jarvis mantém os bytes apenas durante o encaminhamento, mas o Codex
 pode reter a imagem na thread persistente e o OpenCode na própria sessão; o
 modelo configurado no OpenCode pode ser remoto. Use apenas modelos com visão.
 
-O SQLite também guarda as credenciais do dispositivo vinculado para reconectar. Para parear outra
-conta, execute o mesmo comando com o novo número em `JARVIS_WHATSAPP_OWNER` e escaneie o QR nessa conta. Cada número tem
-seu próprio pareamento. Ao voltar ao número anterior, o Jarvis reutiliza o
-vínculo, se ainda estiver ativo. O `whatsmeow`
+O SQLite também guarda as credenciais do dispositivo vinculado para reconectar.
+Para rodar dois números ao mesmo tempo, inicie uma instância do processo para
+cada aparelho, usando `JARVIS_WHATSAPP_OWNER` diferente em cada terminal.
+Cada número tem pareamento, SQLite, thread Codex, nome e personalidade próprios.
+As duas instâncias podem compartilhar o mesmo perfil autenticado do Codex
+(`JARVIS_CODEX_HOME`), usando a mesma conta GPT, sem compartilhar a thread ou o
+histórico de conversa do Jarvis. Configure `JARVIS_WHATSAPP_NAME` e
+`JARVIS_WHATSAPP_PERSONA` separadamente em cada processo. Exemplo:
+
+```sh
+# Terminal 1: seu número e sua conversa pessoal
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5544111111111 JARVIS_WHATSAPP_NAME=Jarvis go run .
+
+# Terminal 2: outro aparelho com identidade própria
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5544222222222 JARVIS_WHATSAPP_NAME=JarvisCasa \
+  JARVIS_WHATSAPP_PERSONA='Ajude com rotinas e informações da casa.' go run .
+```
+
+Use o mesmo `JARVIS_CODEX_HOME` nos dois terminais para reutilizar a autenticação,
+mas mantenha números distintos. Cada processo precisa continuar rodando; não
+inicie duas instâncias para o mesmo número. Ao voltar a iniciar uma instância,
+o Jarvis reutiliza o vínculo correspondente, se ainda estiver ativo. O `whatsmeow`
 é uma integração não oficial, sujeita a desconexão ou restrição de conta.
 O canal usa conexões de saída para WhatsApp e GPT. Para trocar mensagens,
 basta o processo estar rodando no notebook com internet. Tailscale fica
 para o acesso remoto à interface web e ao `/code`. O teste com uma conta
 real continua pendente.
+
+As respostas convertem títulos, listas, links, negrito, itálico, tachado,
+blocos de código e tabelas para formas mais legíveis no Markdown do WhatsApp.
+Respostas extensas são divididas em mensagens menores, preservando blocos de
+código entre partes.
 
 ### OpenCode no chat Você
 

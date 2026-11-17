@@ -79,7 +79,10 @@ real ainda está pendente.
 - O canal WhatsApp agora cria uma thread com `ephemeral: false`, persiste o
   `threadId` no SQLite da conta e retoma pelo App Server nos próximos turnos.
   A integração usa instruções iniciais editáveis por
-  `JARVIS_WHATSAPP_PERSONA`, sem habilitar ferramentas locais do Codex.
+  `JARVIS_WHATSAPP_PERSONA`, sem habilitar ferramentas locais do Codex. Cada
+  instância pode definir `JARVIS_WHATSAPP_NAME` e uma personalidade própria;
+  números distintos podem rodar processos simultâneos, compartilhar o mesmo
+  `CODEX_HOME` autenticado e manter threads e pareamentos independentes.
   Já o provedor HTTP do Ollama recebe uma lista de mensagens por chamada e não
   mantém sozinho uma sessão conversacional.
 - Não encontrei no protocolo uma operação para selecionar ou retomar o chat da

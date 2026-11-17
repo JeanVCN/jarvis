@@ -2,6 +2,20 @@
 
 Documentacao arquitetural do estado atual do Jarvis.
 
+## Canal WhatsApp
+
+O processo Go do WhatsApp filtra mensagens para o chat **Você** do número
+autorizado em `JARVIS_WHATSAPP_OWNER`, encaminha texto/voz/imagem pelo modo
+persistido e salva metadados em SQLite específico do número. Instâncias para
+números diferentes podem rodar em paralelo; cada uma usa seu próprio banco,
+pareamento, thread Codex, nome (`JARVIS_WHATSAPP_NAME`) e persona
+(`JARVIS_WHATSAPP_PERSONA`). Elas podem compartilhar `JARVIS_CODEX_HOME` e a
+mesma autenticação OAuth, enquanto as threads Codex permanecem separadas por
+conta do WhatsApp. O adaptador converte Markdown comum para o subconjunto mais
+compatível com WhatsApp e divide respostas grandes. Imagens JPEG/PNG/WebP são
+encaminhadas inline ao Codex ou OpenCode; o Jarvis não aplica OCR ou transformação.
+Ver limites e retenção em [README.md](README.md#whatsapp--texto-notas-de-voz-e-imagens-em-modo-experimental).
+
 ## Estado de referência — 2026-11-16
 
 O fluxo atual de laboratório usa Next.js `/lab`, Python SmallWebRTC para áudio

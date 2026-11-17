@@ -13,10 +13,13 @@ pendente, o histórico e o plano de voz estão no início de [ROADMAP.md](ROADMA
 `/cmd` ainda não está implementado; fica adiado até existir uma ponte Android
 para as Google Home APIs.
 O contexto inicial da conversa Codex é configurável por
-`JARVIS_WHATSAPP_PERSONA`; o identificador da thread fica no SQLite da conta e
-seu histórico permanece no `CODEX_HOME`. O roadmap registra a validação de
-retomada após reinício e distingue essa thread de retomar diretamente uma
-conversa do GPT Work. A mesma personalidade no Ollama permanece futura.
+`JARVIS_WHATSAPP_NAME` e `JARVIS_WHATSAPP_PERSONA`; o identificador da thread
+fica no SQLite de cada conta e seu histórico permanece no `CODEX_HOME`. Duas
+instâncias para números diferentes podem rodar ao mesmo tempo e compartilhar
+autenticação, mantendo pareamento, thread, nome e persona separados. O roadmap
+registra a validação de retomada após reinício e distingue essa thread de
+retomar diretamente uma conversa do GPT Work. A mesma personalidade no Ollama
+permanece futura.
 GPT/Codex não terá ferramentas para acessar a máquina local; OpenCode será o
 único executor local. Ações externas, como gerenciar campanhas, exigem integração
 específica com a plataforma correspondente, já que os conectores do ChatGPT Work

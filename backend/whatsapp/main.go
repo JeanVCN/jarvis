@@ -87,7 +87,14 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer routesDB.Close()
-	persona := os.Getenv("JARVIS_WHATSAPP_PERSONA")
+	assistantName := whatsappAssistantName(os.Getenv("JARVIS_WHATSAPP_NAME"))
+	replyPrefix := assistantName + ": "
+	persona := strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_PERSONA"))
+	if persona == "" {
+		persona = fmt.Sprintf("Você é %s, assistente pessoal do usuário. Fale em português brasileiro, com tom natural, cordial e respostas concisas. Ajude com dúvidas e tarefas cotidianas. Considere o histórico desta conversa para manter continuidade. Não use ferramentas, arquivos, comandos ou rede; não afirme ter executado ações externas. Use Markdown padrão quando útil; a resposta será adaptada para o WhatsApp.", assistantName)
+	} else {
+		persona = "Seu nome é " + assistantName + ". " + persona
+	}
 	provider, err := conversation.NewCodexTextWithThreadStore(os.Getenv("JARVIS_WHATSAPP_MODEL"), persona, whatsappThreadStore{db: routesDB})
 	if err != nil {
 		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
@@ -203,7 +210,7 @@ func run(ctx context.Context) error {
 				return context.Cause(ctx)
 			}
 			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
+			prompt := selfPromptWithPrefix(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event), replyPrefix)
 			isImage := isImageMessage(event)
 			isVoice := !isImage && prompt == "" && isVoiceNote(event)
 			transcriptionFailed := false
@@ -263,11 +270,18 @@ func run(ctx context.Context) error {
 			if reply == "" {
 				continue
 			}
-			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			_, sendErr := client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + reply)})
-			cancel()
+			parts := splitWhatsAppMessage(formatWhatsAppMarkdown(reply), 12*1024-160)
+			var sendErr error
+			for _, part := range parts {
+				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), &waE2E.Message{Conversation: proto.String(replyPrefix + part)})
+				cancel()
+				if sendErr != nil {
+					break
+				}
+			}
 			if sendErr != nil {
-				if prompt == "/code" {
+				if !isVoice && !isImage && prompt == "/code" {
 					return fmt.Errorf("não consegui confirmar o modo pelo WhatsApp; roteamento interrompido")
 				}
 				log.Print("Falha ao enviar resposta no WhatsApp")
@@ -328,6 +342,18 @@ func isVoiceNote(event *events.Message) bool {
 
 func isImageMessage(event *events.Message) bool {
 	return event != nil && event.Message != nil && event.Message.GetImageMessage() != nil
+}
+
+func whatsappAssistantName(raw string) string {
+	name := strings.NewReplacer("\r", " ", "\n", " ", ":", "").Replace(strings.TrimSpace(raw))
+	runes := []rune(name)
+	if len(runes) > 32 {
+		name = string(runes[:32])
+	}
+	if strings.TrimSpace(name) == "" {
+		return "Jarvis"
+	}
+	return name
 }
 
 func supportedWhatsAppImageMIME(raw string) (string, error) {
@@ -425,12 +451,16 @@ func incomingText(event *events.Message) string {
 }
 
 func selfPrompt(source types.MessageSource, owner, ownPhone, ownLID types.JID, body string) string {
+	return selfPromptWithPrefix(source, owner, ownPhone, ownLID, body, replyPrefix)
+}
+
+func selfPromptWithPrefix(source types.MessageSource, owner, ownPhone, ownLID types.JID, body, prefix string) string {
 	if !isSelfChatSource(source, owner, ownPhone, ownLID) {
 		return ""
 	}
 	// Replies can also arrive as events from the linked account. Never feed
 	// our own output back into inference, including after a restart.
-	if strings.HasPrefix(body, replyPrefix) {
+	if strings.HasPrefix(body, prefix) {
 		return ""
 	}
 	return body
