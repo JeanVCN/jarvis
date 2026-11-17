@@ -28,6 +28,9 @@ integração para a empresa é uma avaliação separada.
   descrições e a marca `Recommended`; números escolhem a opção e texto livre
   responde de forma personalizada. Pedidos de permissão podem ser respondidos
   no WhatsApp com `/aprovar` ou `/rejeitar`, sem conceder `always`.
+- Na interface web, formulários do OpenCode agora são exibidos como campos
+  interativos e respostas são registradas no journal apenas por hash, sem salvar
+  o conteúdo da resposta.
 - O canal usa conexões de saída e o bridge do OpenCode em loopback. O piloto
   pelo WhatsApp dispensa API pública, webhook, acesso remoto pela rede local
   e Tailscale. Tailscale fica como opção para o piloto separado da interface web.
