@@ -16,8 +16,9 @@ integração para a empresa é uma avaliação separada.
 - `backend/whatsapp` usa `whatsmeow` como dispositivo vinculado. Cada conta tem
   pareamento separado e só processa seu próprio chat **Você**. Outro número
   pode ser pareado com a mesma regra, mantendo os vínculos anteriores.
-- Texto comum vai ao GPT autenticado pelo perfil Codex do Jarvis. Cada
-  mensagem do chat normal é um turno independente nesta etapa.
+- Texto comum vai ao GPT autenticado pelo perfil Codex do Jarvis, usando uma
+  thread persistente por conta vinculada. O SQLite mantém somente o ID da
+  thread; o contexto fica no armazenamento Codex em `CODEX_HOME`.
 - O comando digitado `/code` alterna para uma sessão do OpenCode no projeto
   configurado na allowlist. Um novo `/code` volta ao chat normal. O Jarvis
   confirma a troca e guarda modo e vínculo de sessão por conta. O resultado
@@ -40,34 +41,116 @@ para verificar o aviso e a ausência de fallback. Alternar de volta e confirmar
 a resposta normal do GPT. Build e testes simulados já passaram. Este piloto
 real ainda está pendente.
 
-### 2. Histórico e memória — depois do piloto de texto
+### 2. Histórico e memória — thread inicial implementada; validar no piloto
 
-- Vincular eventos e respostas do chat normal ao histórico do Jarvis no
-  PostgreSQL. Definir a identidade da conversa separadamente do número
-  pareado e quais contas autorizadas podem usar essa mesma memória.
+- O WhatsApp mantém o histórico visível e canônico do chat. Não copiar o texto
+  de mensagens/respostas para PostgreSQL ou outro arquivo de histórico do Jarvis;
+  o SQLite do canal guarda somente credenciais de pareamento, modo, vínculos de
+  sessão e IDs de mensagem para deduplicação.
+- A thread Codex persistente preserva o contexto do GPT em `CODEX_HOME`. Isso é
+  contexto do motor, não um arquivo de histórico Jarvis, e precisa ser
+  considerado na retenção/exclusão. A personalidade inicial pode ser ajustada
+  por `JARVIS_WHATSAPP_PERSONA`; mudanças de persona devem ser validadas no
+  piloto após reiniciar o processo.
 - Manter o contexto de tarefas no OpenCode. Definir quais metadados da
-  delegação devem aparecer no Jarvis e quais resultados podem entrar na
-  memória do chat normal, com uma decisão explícita antes de cruzar os contextos.
+  delegação devem aparecer no Jarvis sem duplicar o conteúdo do chat normal.
 
-### Evolução de voz — proposta para o mesmo chat
+### Personalização persistente do Jarvis — investigação e direção inicial
 
-- Uma nota de voz entra pelo mesmo canal. Reaproveitar o STT existente e
-  começar com Whisper `small` local em PT-BR. Se errar nomes, siglas ou
+- O usuário quer uma personalidade estável do Jarvis (identidade, idioma, tom e
+  auxílio em tarefas cotidianas), com contexto que possa ser refinado ao longo
+  das conversas e usado tanto pelo GPT via OAuth/Codex quanto pelo Ollama.
+- Fronteira de execução definida: GPT/Codex não recebe ferramentas para acessar
+  filesystem, shell ou outros recursos da máquina local. OpenCode é o único
+  executor local para implementação de código. GPT ainda poderá atuar em serviços
+  externos, como campanhas, por integrações específicas e autorizadas.
+- “Work” do produto ChatGPT não é um modo que o Codex App Server exponha via
+  OAuth. Conectores/apps da conta ChatGPT não são automaticamente herdados pelo
+  Codex. Para gerenciar campanhas, identificar primeiro o serviço e integrar sua
+  API oficial ou um MCP remoto com escopos mínimos, trilha de auditoria e
+  confirmação para ações de impacto (por exemplo, publicar ou alterar orçamento).
+  Não dar ao GPT uma ponte genérica para a máquina local para contornar essa falta.
+- Confirmado no protocolo V2 do Codex App Server: existem `thread/start`,
+  `thread/resume` e `thread/list`. Uma thread iniciada com `ephemeral: false` é
+  persistida no armazenamento local do Codex; `thread/resume` aceita o `threadId`
+  e documenta carregar a conversa do disco. `baseInstructions` permite fornecer
+  instruções ao iniciar/retomar. O App Server é experimental e sua versão deve
+  ser fixada/verificada antes da implementação.
+- O canal WhatsApp agora cria uma thread com `ephemeral: false`, persiste o
+  `threadId` no SQLite da conta e retoma pelo App Server nos próximos turnos.
+  A integração usa instruções iniciais editáveis por
+  `JARVIS_WHATSAPP_PERSONA`, sem habilitar ferramentas locais do Codex.
+  Já o provedor HTTP do Ollama recebe uma lista de mensagens por chamada e não
+  mantém sozinho uma sessão conversacional.
+- Não encontrei no protocolo uma operação para selecionar ou retomar o chat da
+  interface GPT Work. `thread/list` lista threads locais do Codex; a opção
+  `currentAccountOnly` restringe esse histórico à conta, mas não identifica um
+  chat aberto no produto ChatGPT. Tratar a conversa do Work como inacessível pelo
+  OAuth, salvo confirmação futura em documentação/API oficial.
+- Direção aplicada ao canal WhatsApp: identidade de conversa pertencente ao
+  Jarvis e um `threadId` persistente por conta vinculada e perfil Codex
+  autenticado. O próximo trabalho é validar retomada após reinício e definir
+  exportação/exclusão da thread. Avaliar depois a mesma personalidade para o
+  Ollama, cuja chamada deve receber o histórico necessário. A thread Codex fica em `CODEX_HOME`; ao
+  trocar conta, manter vínculos separados e não presumir que a outra conta
+  consegue retomar o `threadId`. Contexto pessoal permanece separado de sessões
+  OpenCode e de ferramentas de campanhas externas.
+- Projetar identidade de conversa própria do Jarvis, instruções iniciais
+  editáveis, memória opcional e comandos para resetar/apagar o contexto. Trocar
+  provedor/conta não deve apagar a conversa; contexto pessoal não deve ser
+  copiado para sessões OpenCode automaticamente.
+- Próxima verificação: conferir o comportamento na versão estável instalada no
+  notebook, com OAuth já configurado, em um teste sem tarefa externa: criar uma
+  thread persistente, iniciar dois turnos, encerrar/reiniciar Codex e retomar pelo
+  ID. Em separado, confirmar se algum mecanismo oficialmente suportado importa
+  chats do ChatGPT Work; não reutilizar armazenamento interno do produto.
+- Manter custo incremental R$ 0: OAuth somente quando permitido pelo plano
+  existente; Ollama local sem serviço pago. Validar tamanho/limites de contexto
+  e comportamento de thread antes de prometer continuidade entre provedores.
+- Fontes: [guia do Codex App Server](https://developers.openai.com/codex/app-server/),
+  [protocolo V2 de threads no repositório oficial](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
+  e [modelo de thread persistida](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs).
+
+### Autorização adicional para `/code` e `/cmd` — opções para testar depois
+
+- Não implementar agora. Conversas comuns com GPT permanecem disponíveis sem
+  esse passo adicional; exigir a autorização antes de ativar `/code` ou executar
+  `/cmd`.
+- Opção A — restringir por aparelho remetente. Verificar se o `Sender` AD JID do
+  WhatsApp identifica de forma confiável o telefone autorizado. O SQLite do
+  `whatsmeow` identifica a sessão vinculada do Jarvis, não o aparelho que enviou
+  cada mensagem. Revalidar após troca/reinstalação de aparelho; bloquear se o
+  identificador estiver ausente ou inesperado.
+- Opção B — TOTP em um app autenticador compatível, como Google Authenticator.
+  Avaliar se um código autoriza a entrada em `/code` por uma janela curta e se
+  `/cmd` exige autorização por ação ou por sessão curta. Nunca encaminhar segredo
+  ou código ao GPT/OpenCode, registrar códigos, aceitar reutilização, ou permitir
+  tentativas ilimitadas. Proteger o segredo TOTP no host e limitar tentativas.
+- Testar as opções separadamente e em conjunto. Um TOTP digitado no mesmo chat
+  WhatsApp fica visível no histórico da conta; avaliar esse risco se outro
+  dispositivo vinculado puder ler o chat. Não tratar autenticação TOTP como
+  substituto da autorização por dispositivo no futuro bridge Android.
+
+### Notas de voz — primeira integração implementada; validar no piloto
+
+- Notas PTT de até 120 segundos e 15 MiB entram pelo mesmo canal. A mídia é
+  baixada em memória e segue pelo STT local configurado. O áudio e a
+  transcrição não são copiados para o SQLite do Jarvis. Começar com Whisper
+  `small` local em PT-BR. Se errar nomes, siglas ou
   comandos com frequência, comparar com Whisper Large v3 Turbo na camada
   gratuita da Groq. A opção remota exige escolha explícita porque envia o
   áudio ao provedor. O GPT autenticado via Codex App Server continua
   recebendo texto.
-- No modo OpenCode, encaminhar a transcrição à sessão existente e responder
-  por texto. No modo normal, uma invocação explícita no começo da fala, como
-  “OpenCode, roda os testes”, encaminha só aquela tarefa. Se o destino ficar
-  ambíguo ou a transcrição falhar, confirmar o destino ou pedir outro áudio.
-  O modo persistente muda somente com o `/code` digitado. Detectar intenções
-  de IoT com transcrição local antes de considerar qualquer provedor remoto.
-  Se o áudio não puder ser classificado localmente, pedir um comando escrito
-  ou outro áudio.
-- Resposta em nota de voz fica para o chat normal. As permissões de execução
-  do OpenCode continuam valendo para tarefas ditadas. Validar com gravações
-  reais em português antes de escolher STT/TTS.
+- A transcrição segue apenas o modo já confirmado por `/code`: no modo
+  OpenCode, encaminhar à sessão existente; no modo normal, enviar ao GPT pela
+  thread persistente. Voz não ativa `/code` nem escolhe executor por inferência.
+  Se STT falhar, pedir outro áudio ou texto. A indisponibilidade do OpenCode
+  não redireciona a transcrição ao GPT.
+- O modo persistente muda somente com o `/code` digitado. Invocação por voz
+  para IoT permanece futura e exige classificação local antes de qualquer
+  provedor remoto.
+- As respostas são texto por enquanto. Resposta sintetizada em nota de voz e
+  validação com gravações reais em português continuam pendentes.
 
 ### Imagens — proposta para o chat normal
 
@@ -83,6 +166,13 @@ real ainda está pendente.
 
 ### Ações locais — `/cmd` de um único turno
 
+- Estado: adiado. Não implementar `/cmd` ou executor simulado até a ponte Android
+  com Google Home APIs estar viável. O probe atual é somente leitura; OAuth,
+  descoberta real e atuação física ainda não foram validados.
+- “Usar o app Google Home como ponte” não significa automatizar sua interface.
+  A arquitetura prevista é um app Jarvis Android autorizado usando as Home APIs,
+  com canal autenticado entre o processo Jarvis/WhatsApp e o aparelho. Primeiro
+  provar descoberta/estado; só depois avaliar ações tipadas em luzes compatíveis.
 - `/cmd ligar a luz da sala` ou uma invocação explícita no início da nota de
   voz, como “Jarvis, comando: ligar a luz da sala”, seleciona o caminho de IoT
   para aquela mensagem. A frase exata deve ser validada com gravações reais.
@@ -97,6 +187,13 @@ real ainda está pendente.
   um dispositivo cadastrado e checa a operação e os parâmetros permitidos.
   Recusa ações fora do catálogo e pede esclarecimento para destino ambíguo.
   O executor aceita somente operações tipadas já configuradas.
+- Restrição por aparelho: `IsFromMe` e o chat **Você** identificam a conta/chat,
+  não qual aparelho vinculado originou a mensagem. O SQLite identifica a sessão
+  do Jarvis no WhatsApp. Antes de autorizar ações, verificar se o `Sender` AD JID
+  entregue pelo WhatsApp distingue de forma confiável o telefone permitido dos
+  outros dispositivos vinculados; falhar fechado se faltar ou mudar. Se não for
+  confiável, exigir pareamento próprio autenticado do app Android e usar o
+  WhatsApp somente como interface de solicitação.
 - Começar com consulta de estado e ação explícita de ligar/desligar uma
   lâmpada cadastrada. Exigir confirmação separada para operações de maior
   impacto. Vincular a confirmação à conta, à ação exata e à validade do

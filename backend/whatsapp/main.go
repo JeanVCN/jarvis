@@ -1,4 +1,4 @@
-// Command whatsapp runs the optional, text-only WhatsApp channel.
+// Command whatsapp runs the optional WhatsApp chat and voice-note channel.
 package main
 
 import (
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,8 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jean/jarvis/backend/internal/config"
 	"github.com/jean/jarvis/backend/internal/conversation"
 	"github.com/jean/jarvis/backend/internal/opencode"
+	"github.com/jean/jarvis/backend/internal/voice"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -46,11 +49,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("defina JARVIS_WHATSAPP_OWNER com o número autorizado, incluindo país e DDD")
 	}
 	owner := types.NewJID(number, types.DefaultUserServer)
-
-	provider, err := conversation.NewCodexText(os.Getenv("JARVIS_WHATSAPP_MODEL"))
-	if err != nil {
-		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
-	}
 
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -88,6 +86,15 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer routesDB.Close()
+	persona := os.Getenv("JARVIS_WHATSAPP_PERSONA")
+	provider, err := conversation.NewCodexTextWithThreadStore(os.Getenv("JARVIS_WHATSAPP_MODEL"), persona, whatsappThreadStore{db: routesDB})
+	if err != nil {
+		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
+	}
+	recognizer, err := whatsappSpeechRecognizer(config.Load())
+	if err != nil {
+		return err
+	}
 	router := messageRouter{
 		db:      routesDB,
 		project: strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OPENCODE_PROJECT")),
@@ -141,7 +148,10 @@ func run(ctx context.Context) error {
 			default:
 			}
 		case *events.Message:
-			if incomingText(event) == "" {
+			if !isSelfChatSource(event.Info.MessageSource, owner, device.GetJID(), device.GetLID()) {
+				return
+			}
+			if incomingText(event) == "" && !isVoiceNote(event) {
 				return
 			}
 			select {
@@ -188,12 +198,27 @@ func run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return context.Cause(ctx)
 			}
+			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
+			transcriptErr := false
+			if prompt == "" && isVoiceNote(event) {
+				prompt, err = transcribeVoice(replyCtx, client, event, recognizer)
+				if err != nil {
+					log.Print("Não foi possível transcrever nota de voz com o STT local")
+					prompt = "Não consegui transcrever essa nota de voz localmente. Tente um áudio mais curto ou envie texto."
+					transcriptErr = true
+				}
+			}
 			if prompt == "" {
+				cancel()
 				continue
 			}
-			replyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			reply, err := router.reply(replyCtx, string(event.Info.ID), prompt)
+			var reply string
+			if transcriptErr {
+				reply = prompt
+			} else {
+				reply, err = router.reply(replyCtx, string(event.Info.ID), prompt)
+			}
 			cancel()
 			if err != nil {
 				return fmt.Errorf("roteamento do WhatsApp interrompido: %w", err)
@@ -212,6 +237,75 @@ func run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+type whatsappThreadStore struct{ db *sql.DB }
+
+func (s whatsappThreadStore) Get(ctx context.Context) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, "SELECT thread_id FROM jarvis_codex_thread WHERE id = 1").Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+func (s whatsappThreadStore) Set(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO jarvis_codex_thread (id, thread_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET thread_id = excluded.thread_id", id)
+	return err
+}
+
+const maxWhatsAppVoiceBytes = 15 << 20
+
+func whatsappSpeechRecognizer(cfg config.Config) (voice.SpeechRecognizer, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.VoiceSTTProvider)) {
+	case "", "command":
+		return voice.NewCommandSpeechRecognizer(cfg.VoiceSTTCommand, voice.ParseArgs(cfg.VoiceSTTArgs), cfg.VoiceSTTModel, cfg.VoiceSTTLanguage), nil
+	case "http":
+		if !isLoopbackURL(cfg.VoiceSTTURL) || (cfg.VoiceSTTStatusURL != "" && !isLoopbackURL(cfg.VoiceSTTStatusURL)) {
+			return nil, errors.New("o STT HTTP do WhatsApp precisa usar somente um endereço loopback local")
+		}
+		return voice.NewHTTPSpeechRecognizer(cfg.VoiceSTTURL, cfg.VoiceSTTStatusURL, cfg.VoiceSTTLanguage), nil
+	default:
+		return nil, errors.New("provedor de STT do WhatsApp inválido; use command ou HTTP local")
+	}
+}
+
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isVoiceNote(event *events.Message) bool {
+	return event != nil && event.Message != nil && event.Message.GetAudioMessage().GetPTT()
+}
+
+func transcribeVoice(ctx context.Context, client *whatsmeow.Client, event *events.Message, recognizer voice.SpeechRecognizer) (string, error) {
+	audio := event.Message.GetAudioMessage()
+	if audio.GetFileLength() > maxWhatsAppVoiceBytes || audio.GetSeconds() > 120 {
+		return "", errors.New("nota de voz excede o limite de 15 MiB ou 120 segundos")
+	}
+	data, err := client.Download(ctx, audio)
+	if err != nil {
+		return "", errors.New("download da nota de voz falhou")
+	}
+	defer clear(data)
+	if len(data) == 0 || len(data) > maxWhatsAppVoiceBytes {
+		return "", errors.New("tamanho da nota de voz inválido")
+	}
+	transcript, err := recognizer.Recognize(ctx, voice.AudioInput{Data: data, Format: audio.GetMimetype(), Language: "pt"})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(transcript), nil
 }
 
 // Reuse an existing single-account database only for its original owner.
@@ -273,11 +367,7 @@ func incomingText(event *events.Message) string {
 }
 
 func selfPrompt(source types.MessageSource, owner, ownPhone, ownLID types.JID, body string) string {
-	if !source.IsFromMe || source.IsGroup || ownPhone.ToNonAD() != owner {
-		return ""
-	}
-	chat := source.Chat.ToNonAD()
-	if chat.IsEmpty() || (chat != ownPhone.ToNonAD() && chat != ownLID.ToNonAD()) {
+	if !isSelfChatSource(source, owner, ownPhone, ownLID) {
 		return ""
 	}
 	// Replies can also arrive as events from the linked account. Never feed
@@ -286,6 +376,14 @@ func selfPrompt(source types.MessageSource, owner, ownPhone, ownLID types.JID, b
 		return ""
 	}
 	return body
+}
+
+func isSelfChatSource(source types.MessageSource, owner, ownPhone, ownLID types.JID) bool {
+	if !source.IsFromMe || source.IsGroup || ownPhone.ToNonAD() != owner {
+		return false
+	}
+	chat := source.Chat.ToNonAD()
+	return !chat.IsEmpty() && (chat == ownPhone.ToNonAD() || chat == ownLID.ToNonAD())
 }
 
 func generateReply(ctx context.Context, provider conversation.Provider, prompt string) string {

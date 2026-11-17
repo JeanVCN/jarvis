@@ -42,13 +42,17 @@ func (r messageRouter) init(ctx context.Context) error {
 			create_id TEXT NOT NULL,
 			session_id TEXT NOT NULL DEFAULT ''
 		);
+		CREATE TABLE IF NOT EXISTS jarvis_codex_thread (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			thread_id TEXT NOT NULL
+		);
 	`)
 	return err
 }
 
 func (r messageRouter) reply(ctx context.Context, id, text string) (string, error) {
-	// Commit the toggle and its deduplication together. Persist only routing
-	// metadata, so a replay cannot accidentally forward a code prompt to GPT.
+	// Commit mode changes and deduplication together. Persist only routing
+	// metadata, so a replay cannot forward a code prompt to GPT.
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err

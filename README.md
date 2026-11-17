@@ -405,7 +405,7 @@ Resposta esperada:
 }
 ```
 
-## WhatsApp — texto em modo experimental
+## WhatsApp — texto e notas de voz em modo experimental
 
 O canal usa seu próprio número, Go 1.26+, CGO com compilador C e o GPT
 autenticado pelo Codex App Server. Prepare uma vez o [perfil Codex do
@@ -424,9 +424,23 @@ O Jarvis identifica suas respostas com `Jarvis:` e ignora mensagens com
 essa marca para evitar loops.
 
 O modelo segue o padrão do perfil Codex. Para selecionar outro modelo
-elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. No chat normal,
-cada mensagem é um turno independente, sem histórico do canal. O SQLite guarda as
-credenciais do dispositivo vinculado para reconectar. Para parear outra
+elegível para sua conta, defina `JARVIS_WHATSAPP_MODEL`. O chat normal mantém
+uma thread Codex persistente por conta vinculada. O Jarvis guarda somente o ID
+dessa thread no SQLite; o histórico do modelo fica no `CODEX_HOME` do perfil
+Codex. Personalize o contexto inicial com `JARVIS_WHATSAPP_PERSONA`.
+
+Notas de voz (PTT) de até 120 segundos e 15 MiB são baixadas em memória e
+transcritas pelo STT local configurado em `VOICE_STT_COMMAND` e
+`VOICE_STT_ARGS`. O arquivo temporário usado pelo reconhecedor é removido ao
+fim da chamada; o Jarvis não grava áudio nem transcrição no SQLite. A
+transcrição segue o modo já confirmado no chat: modo normal envia texto ao GPT
+pela thread persistente; `/code` envia texto à sessão OpenCode existente. A
+transcrição não pode ativar `/code` por conta própria e uma falha no OpenCode
+nunca redireciona o conteúdo ao GPT. Sem STT local disponível, o Jarvis pede
+outro áudio ou texto. Mensagens com áudio que não sejam notas PTT continuam
+ignoradas.
+
+O SQLite também guarda as credenciais do dispositivo vinculado para reconectar. Para parear outra
 conta, execute o mesmo comando com o novo número em `JARVIS_WHATSAPP_OWNER` e escaneie o QR nessa conta. Cada número tem
 seu próprio pareamento. Ao voltar ao número anterior, o Jarvis reutiliza o
 vínculo, se ainda estiver ativo. O `whatsmeow`

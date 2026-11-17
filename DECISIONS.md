@@ -733,7 +733,8 @@ Status: sequência recomendada; validação ainda pendente.
 
 ### 2026-11-16 - WhatsApp pessoal e roteamento explícito
 
-Status: aceita. Texto e alternância implementados, piloto real pendente.
+Status: aceita. Texto, alternância, thread Codex persistente e notas PTT com
+STT local implementados; piloto real pendente.
 
 - O Jarvis terá implementação própria para uso pessoal. A conta vinculada
   só aciona o Jarvis em sua própria conversa **Você**. Cada conta tem
@@ -748,8 +749,42 @@ Status: aceita. Texto e alternância implementados, piloto real pendente.
 - A conexão local reduz a exposição de rede. O modelo remoto escolhido no
   OpenCode ainda pode receber prompt, arquivos ou saídas incluídas na tarefa.
   Aprovações do OpenCode seguem sob controle local.
-- Histórico compartilhado e notas de voz serão evoluídos após a primeira
-  validação do transporte. Ver o plano e os critérios em [ROADMAP.md](ROADMAP.md).
+- O canal mantém thread Codex por conta vinculada; o SQLite armazena somente
+  o ID da thread e o histórico do motor fica em `CODEX_HOME`. Notas de voz PTT
+  são transcritas localmente e seguem o modo atual; /code precisa ser digitado.
+  Ver o plano e os critérios em [ROADMAP.md](ROADMAP.md).
+
+### 2026-11-17 - Thread Codex persistente e voz WhatsApp com roteamento pelo modo
+
+Status: implementada; retomada real e qualidade de STT pendentes de piloto.
+
+Contexto:
+
+- O adaptador Codex criava uma thread efêmera a cada mensagem.
+- O canal WhatsApp só extraía texto, embora o Jarvis já tivesse um reconhecedor
+  STT configurável para uso local.
+- O usuário quer manter o custo adicional em R$ 0 e separar conversa GPT da
+  execução local, que permanece exclusiva do OpenCode.
+
+Decisão:
+
+- Manter uma thread Codex persistente por conta WhatsApp, salvar apenas seu ID
+  no SQLite e deixar o histórico do provedor sob `CODEX_HOME`. A instrução inicial
+  aceita a personalidade configurada por `JARVIS_WHATSAPP_PERSONA`.
+- Receber somente notas PTT até 120 segundos e 15 MiB. Reutilizar STT por
+  comando ou por HTTP em loopback; descartar mídia temporária e não guardar
+  transcrição no SQLite do Jarvis.
+- Roteamento de voz segue exclusivamente o modo já confirmado: normal para GPT,
+  `/code` para a sessão OpenCode ativa. Áudio não muda o modo nem escolhe
+  executor por inferência; indisponibilidade do OpenCode não faz fallback para
+  GPT. STT remoto e respostas em áudio ficam fora desta implementação.
+
+Impacto:
+
+- O histórico da thread do Codex é retido pelo `CODEX_HOME`, separado do
+  histórico canônico visível no WhatsApp; reset e exclusão precisam ser definidos.
+- Build e piloto com Codex/STT reais continuam pendentes neste ambiente. Não
+  houve validação de qualidade com gravações reais.
 
 
 ### 2026-11-16 - Comando de IoT local por mensagem

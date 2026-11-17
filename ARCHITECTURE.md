@@ -167,19 +167,29 @@ configuração. O processo envia as respostas pela mesma conexão, com marca
 | Entrada | Destino |
 |---|---|
 | `/code` digitado | Alternância local e persistida. O comando não aciona inferência. |
-| Texto no chat normal | OpenAI pelo perfil Codex autenticado, via adaptador de `internal/conversation`. |
+| Texto ou transcrição PTT no chat normal | Thread Codex persistente via `internal/conversation`; o SQLite guarda somente seu ID e o conteúdo fica no `CODEX_HOME`. |
 | Texto no modo OpenCode | `internal/opencode.Client` → bridge HTTP com token em loopback → sessão do projeto permitido. A resposta volta direto ao WhatsApp. |
+| Transcrição PTT no modo OpenCode | Sessão OpenCode existente; sem fallback para GPT se o bridge estiver indisponível. |
 
 O SQLite guarda estado do dispositivo, modo, vínculos com sessões e IDs de
-mensagem por conta. O canal ainda não integra o histórico e a memória do
-Core. A sessão OpenCode tem contexto próprio e pode enviar dados ao modelo
-configurado nela. A API do Core, o frontend e o Tailscale são independentes
-do canal WhatsApp. Etapas futuras de histórico e voz estão no
+mensagem por conta, mais o ID da thread Codex. Notas PTT de até 120 segundos e
+15 MiB são transcritas via comando local ou endpoint STT HTTP de loopback; o
+áudio é descartado e a transcrição não entra no SQLite do Jarvis. O canal não
+integra o histórico do Core. A sessão OpenCode tem contexto próprio e pode
+enviar dados ao modelo configurado nela. A API do Core, o frontend e o
+Tailscale são independentes do canal WhatsApp. Retenção/exclusão da thread,
+resposta falada e piloto real seguem pendentes no
 [roadmap](ROADMAP.md#prioridade-atual--jarvis-pessoal-no-whatsapp).
+
+GPT/Codex permanece sem ferramentas locais de filesystem ou shell. OpenCode é o
+único executor local para desenvolvimento. Integrações de trabalho externo,
+como campanhas, devem usar APIs/MCPs específicos com autorização limitada; o
+OAuth do Codex não disponibiliza automaticamente conectores do ChatGPT Work.
 
 ### Entradas planejadas e fronteira de atuação
 
-As notas de voz passam por STT local para identificar o destino. A invocação
+As notas de voz atuais seguem o modo previamente confirmado por `/code`; voz
+não ativa modo nem seleciona executor por inferência. A futura invocação
 de IoT, digitada como `/cmd` ou falada explicitamente, seleciona o catálogo
 local para um único turno. Comandos exatos podem ser resolvidos diretamente,
 e o Ollama local pode interpretar linguagem natural em formato estruturado.
@@ -188,6 +198,10 @@ operação e parâmetros no Core antes de chegar ao executor físico. GPT e
 OpenCode continuam com suas rotas próprias e sem autoridade para chamar esse
 executor. O módulo de imagens pertence ao chat normal e trata conteúdo
 extraído como dados, sem interpretá-lo como comandos de atuação.
+
+`/cmd` ainda não está implementado no WhatsApp. O trabalho foi adiado até haver
+uma ponte Android real para as Google Home APIs; não automatizar a interface do
+app Google Home como substituto dessa integração.
 
 
 ## Documentação das fases anteriores
