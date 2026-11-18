@@ -461,6 +461,12 @@ As duas instâncias podem compartilhar o mesmo perfil autenticado do Codex
 histórico de conversa do Jarvis. Configure `JARVIS_WHATSAPP_NAME` e
 `JARVIS_WHATSAPP_PERSONA` separadamente em cada processo. Exemplo:
 
+Após parear um número novo, a primeira mensagem inicia um onboarding de dez
+perguntas, uma por vez, para definir nome do assistente e preferências de tom,
+emojis, tamanho das respostas e estilo. `pular` pula uma pergunta. As respostas
+ficam como preferências no SQLite daquela conta (não como histórico de mensagens)
+e são usadas na personalidade daquela instância.
+
 ```sh
 # Terminal 1: seu número e sua conversa pessoal
 cd backend/whatsapp

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jean/jarvis/backend/internal/opencode"
 )
@@ -56,6 +57,35 @@ func TestRoutingPersistsPerAccountAndDoesNotFallBack(t *testing.T) {
 	check(first, "msg4", "olá", "GPT: olá")
 	if normal != 2 {
 		t.Fatalf("GPT recebeu %d mensagens, esperado 2", normal)
+	}
+}
+
+func TestAcknowledgementClaimIsDeduplicatedWithoutMessageContent(t *testing.T) {
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "device.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	router := messageRouter{db: db}
+	ctx := context.Background()
+	if err := router.init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first, err := router.claimAcknowledgement(ctx, "incoming-message-id")
+	if err != nil || !first {
+		t.Fatalf("first claim = %t, %v; want true, nil", first, err)
+	}
+	second, err := router.claimAcknowledgement(ctx, "incoming-message-id")
+	if err != nil || second {
+		t.Fatalf("duplicate claim = %t, %v; want false, nil", second, err)
+	}
+	var stored int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM jarvis_acknowledgements").Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 1 {
+		t.Fatalf("stored acknowledgement IDs = %d, want 1", stored)
 	}
 }
 
@@ -129,5 +159,44 @@ func TestCodeRoutingUsesLocalBridgeAndReusesSession(t *testing.T) {
 	}
 	if created != 1 || prompts != 2 {
 		t.Fatalf("created %d sessions and sent %d prompts", created, prompts)
+	}
+}
+
+func TestWaitForCodeResponseSchedulesFollowUpAfterDeadline(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if req.Method != http.MethodGet || req.URL.Path != "/v1/projects/jarvis/sessions/ses_local" {
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(opencode.SessionDetail{State: "running"})
+	}))
+	defer server.Close()
+	bridge, err := opencode.NewClient(server.URL, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var watched bool
+	router := messageRouter{
+		project: "jarvis",
+		bridge:  bridge,
+		watchCode: func(sessionID string, previous opencode.Message, handledID string) {
+			watched = sessionID == "ses_local" && previous.ID == "msg_previous" && handledID == "permission-id"
+		},
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	reply := router.waitForCodeResponse(ctx, "ses_local", opencode.Message{ID: "msg_previous"}, "permission-id")
+	if !watched {
+		t.Fatal("timed-out code response did not schedule a follow-up watcher")
+	}
+	if !strings.Contains(reply, "Vou avisar por aqui quando concluir") {
+		t.Fatalf("timeout reply = %q", reply)
 	}
 }

@@ -265,7 +265,7 @@ const server = createServer(async (request, response) => {
         json(response, 503, { error: "opencode_unavailable" });
         return;
       }
-      json(response, 202, await sendProjectPrompt(client, project, decodeURIComponent(promptMatch[2]), candidate.operation_id, candidate.text, image));
+      json(response, 202, await sendProjectPrompt(client, project, decodeURIComponent(promptMatch[2]), candidate.text, image));
     } catch (error) {
       if (error instanceof Error && error.message === "session_not_in_project") {
         json(response, 404, { error: "session_not_found" });

@@ -28,6 +28,18 @@ integração para a empresa é uma avaliação separada.
   descrições e a marca `Recommended`; números escolhem a opção e texto livre
   responde de forma personalizada. Pedidos de permissão podem ser respondidos
   no WhatsApp com `/aprovar` ou `/rejeitar`, sem conceder `always`.
+- Requisito relatado no piloto: toda vez que `/code` for enviado, encerrar a
+  sessão OpenCode atual e abrir uma nova, inclusive quando for enviado de novo
+  durante uma pergunta/formulário travado, para permitir reiniciar o fluxo.
+  Isso substitui a expectativa anterior de que `/code` apenas alternasse de volta
+  ao chat normal; implementar e validar antes de tratar como concluído.
+- Após o pareamento inicial de cada número, a primeira mensagem inicia um
+  onboarding de dez perguntas, uma por vez, sobre nome do assistente e
+  preferências de conversa. Respostas e progresso ficam no SQLite separado da
+  conta e alimentam a personalidade somente daquela instância; `pular` é aceito.
+- Durante o piloto, ajustar pelo próprio WhatsApp a apresentação Markdown dos
+  trechos de código retornados pelo OpenCode e validar a renderização no aparelho;
+  não impor uma instrução automática de formatação antes dessa validação.
 - Na interface web, formulários do OpenCode agora são exibidos como campos
   interativos e respostas são registradas no journal apenas por hash, sem salvar
   o conteúdo da resposta.

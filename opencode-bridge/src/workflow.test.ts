@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { OpenCodeClient } from "@opencode/client";
 import type { AllowedProject } from "./projects.js";
-import { createProjectSession, findCreatedSession, interruptProjectSession, readProjectSession, safeDiffPath, sendProjectPrompt, validOperationID } from "./workflow.js";
+import { createProjectSession, findCreatedSession, interruptProjectSession, isSessionBusy, readProjectSession, safeDiffPath, sendProjectPrompt, validOperationID } from "./workflow.js";
 
 const operationID = "0123456789abcdef0123456789abcdef";
 
@@ -19,6 +19,13 @@ test("operation IDs and paths are constrained before crossing the bridge", () =>
   assert.equal(safeDiffPath("src/frontend.tsx"), "src/frontend.tsx");
   assert.equal(safeDiffPath("/home/jean/project/src/main.go"), "main.go");
   assert.equal(safeDiffPath("../../secret"), "secret");
+});
+
+test("session busy state compares the latest busy and idle timestamps", () => {
+  assert.equal(isSessionBusy({}), false);
+  assert.equal(isSessionBusy({ busy: 10 }), true);
+  assert.equal(isSessionBusy({ busy: 10, idle: 11 }), false);
+  assert.equal(isSessionBusy({ busy: 12, idle: 11 }), true);
 });
 
 test("session creation binds a configured directory and ask-only permissions", async () => {
@@ -37,6 +44,7 @@ test("session creation binds a configured directory and ask-only permissions", a
     assert.equal(result.id, "ses_test");
     assert.deepEqual(received, {
       location: { directory },
+      model: { id: "gpt-6-luna", providerID: "openai" },
       permissions: [{ action: "*", resource: "*", effect: "ask" }],
       metadata: { jarvis_operation_id: operationID },
     });
@@ -56,10 +64,37 @@ test("prompt rejects a session outside its allowlisted project before sending", 
   } as unknown as OpenCodeClient;
   try {
     await assert.rejects(
-      sendProjectPrompt(client, project(directory), "ses_foreign", operationID, "test"),
+      sendProjectPrompt(client, project(directory), "ses_foreign", "test"),
       /session_not_in_project/,
     );
     assert.equal(sent, false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prompt omits the Jarvis operation ID from OpenCode's message ID field", async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "jarvis-project-"));
+  let received: unknown;
+  let selectedModel: unknown;
+  const client = {
+    session: {
+      get: async () => ({ location: { directory } }),
+      switchModel: async (input: unknown) => { selectedModel = input; },
+      prompt: async (input: unknown) => {
+        received = input;
+        return { id: "msg_generated_by_opencode" };
+      },
+    },
+  } as unknown as OpenCodeClient;
+  try {
+    const result = await sendProjectPrompt(client, project(directory), "ses_test", "test prompt");
+    assert.deepEqual(selectedModel, {
+      sessionID: "ses_test",
+      model: { id: "gpt-6-luna", providerID: "openai" },
+    });
+    assert.deepEqual(received, { sessionID: "ses_test", text: "test prompt" });
+    assert.deepEqual(result, { inbox_id: "msg_generated_by_opencode" });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -70,7 +105,7 @@ test("interrupt validates project ownership and only requests interruption while
   let interrupted = false;
   const client = {
     session: {
-      get: async () => ({ location: { directory }, time: { busy: true } }),
+      get: async () => ({ location: { directory }, time: { busy: 20 } }),
       interrupt: async () => { interrupted = true; },
     },
   } as unknown as OpenCodeClient;
@@ -79,7 +114,7 @@ test("interrupt validates project ownership and only requests interruption while
     assert.equal(interrupted, true);
     const foreign = {
       session: {
-        get: async () => ({ location: { directory: os.tmpdir() }, time: { busy: true } }),
+        get: async () => ({ location: { directory: os.tmpdir() }, time: { busy: 20 } }),
         interrupt: async () => { throw new Error("must_not_interrupt"); },
       },
     } as unknown as OpenCodeClient;
@@ -92,10 +127,6 @@ test("interrupt validates project ownership and only requests interruption while
 test("session view exposes user and assistant text, never reasoning/tool payloads", async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "jarvis-project-"));
   const client = {
-    session: {
-      get: async () => ({ id: "ses_test", title: "Session", time: { updated: 42 }, location: { directory }, outcome: undefined }),
-      diff: async () => [{ file: "src/main.go", patch: "+safe", additions: 1, deletions: 0, status: "modified" }],
-    },
     message: {
       list: async () => ({ data: [
         { id: "assistant1", type: "assistant", time: { created: 2, completed: 3 }, content: [
@@ -107,9 +138,16 @@ test("session view exposes user and assistant text, never reasoning/tool payload
       ] }),
     },
     permission: { list: async () => [] },
+    session: {
+      get: async () => ({ id: "ses_test", title: "Session", time: { updated: 42, busy: 100, idle: 200 }, location: { directory }, outcome: undefined }),
+      diff: async () => [{ file: "src/main.go", patch: "+safe", additions: 1, deletions: 0, status: "modified" }],
+      form: { list: async () => [] },
+    },
   } as unknown as OpenCodeClient;
   try {
     const result = await readProjectSession(client, project(directory), "ses_test");
+    assert.equal(result.state, "idle");
+    assert.equal(result.session.state, "idle");
     assert.deepEqual(result.messages.map(({ role, content }) => ({ role, content })), [
       { role: "user", content: "hello" },
       { role: "assistant", content: "answer" },

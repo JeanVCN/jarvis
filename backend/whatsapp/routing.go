@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,6 +42,7 @@ type messageRouter struct {
 	bridge    codeBridge
 	chat      func(context.Context, string) string
 	imageChat func(context.Context, string, string, []byte) string
+	watchCode func(string, opencode.Message, string)
 }
 
 func (r messageRouter) init(ctx context.Context) error {
@@ -51,6 +53,9 @@ func (r messageRouter) init(ctx context.Context) error {
 		);
 		INSERT OR IGNORE INTO jarvis_route (id) VALUES (1);
 		CREATE TABLE IF NOT EXISTS jarvis_route_events (
+			message_id TEXT PRIMARY KEY
+		);
+		CREATE TABLE IF NOT EXISTS jarvis_acknowledgements (
 			message_id TEXT PRIMARY KEY
 		);
 		CREATE TABLE IF NOT EXISTS jarvis_code_sessions (
@@ -72,8 +77,32 @@ func (r messageRouter) init(ctx context.Context) error {
 			item_id TEXT NOT NULL,
 			PRIMARY KEY (kind, position)
 		);
+		CREATE TABLE IF NOT EXISTS jarvis_onboarding (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			state TEXT NOT NULL CHECK (state IN ('pending', 'in_progress', 'complete')),
+			question_index INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS jarvis_onboarding_events (
+			message_id TEXT PRIMARY KEY
+		);
+		CREATE TABLE IF NOT EXISTS jarvis_onboarding_answers (
+			question_index INTEGER PRIMARY KEY,
+			answer TEXT NOT NULL
+		);
 	`)
 	return err
+}
+
+func (r messageRouter) claimAcknowledgement(ctx context.Context, id string) (bool, error) {
+	if id == "" {
+		return false, nil
+	}
+	result, err := r.db.ExecContext(ctx, "INSERT OR IGNORE INTO jarvis_acknowledgements (message_id) VALUES (?)", id)
+	if err != nil {
+		return false, err
+	}
+	inserted, err := result.RowsAffected()
+	return inserted > 0, err
 }
 
 func (r messageRouter) codeMode(ctx context.Context) (bool, error) {
@@ -297,6 +326,7 @@ func (r messageRouter) codeReplyWithImage(ctx context.Context, text, mime string
 	}
 
 	operation := operationID()
+	previousAssistant := latestAssistantMessage(detail.Messages)
 	var accepted opencode.PromptAccepted
 	if len(image) > 0 {
 		imageBridge, ok := r.bridge.(imageCodeBridge)
@@ -330,6 +360,10 @@ func (r messageRouter) codeReplyWithImage(ctx context.Context, text, mime string
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && r.watchCode != nil {
+				r.watchCode(sessionID, previousAssistant, "")
+				return "O OpenCode ainda está trabalhando. Vou avisar por aqui quando concluir."
+			}
 			return "O OpenCode recebeu a tarefa, mas a resposta ainda não foi confirmada. Confira a sessão local antes de reenviar."
 		case <-ticker.C:
 		}
@@ -377,6 +411,10 @@ func (r messageRouter) waitForCodeResponse(ctx context.Context, sessionID string
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && r.watchCode != nil {
+				r.watchCode(sessionID, previous, handledID)
+				return "O OpenCode ainda está trabalhando. Vou avisar por aqui quando concluir."
+			}
 			return "O OpenCode recebeu sua resposta, mas ainda não confirmou a conclusão. A sessão continua no mesmo contexto."
 		case <-ticker.C:
 		}
