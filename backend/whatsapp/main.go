@@ -96,6 +96,21 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure o perfil autenticado do Codex no Jarvis: %w", err)
 	}
+	personalizedProvider := func(ctx context.Context) conversation.Provider {
+		profile, profileErr := (messageRouter{db: routesDB}).onboardingProfile(ctx)
+		if profileErr != nil || len(profile) == 0 {
+			return provider
+		}
+		customized, providerErr := conversation.NewCodexTextWithThreadStore(
+			os.Getenv("JARVIS_WHATSAPP_MODEL"),
+			onboardingPersona(persona, profile),
+			whatsappThreadStore{db: routesDB},
+		)
+		if providerErr != nil {
+			return provider
+		}
+		return customized
+	}
 	recognizer, err := whatsappSpeechRecognizer(config.Load())
 	if err != nil {
 		return err
@@ -103,9 +118,11 @@ func run(ctx context.Context) error {
 	router := messageRouter{
 		db:      routesDB,
 		project: strings.TrimSpace(os.Getenv("JARVIS_WHATSAPP_OPENCODE_PROJECT")),
-		chat:    func(ctx context.Context, prompt string) string { return generateReply(ctx, provider, prompt) },
+		chat: func(ctx context.Context, prompt string) string {
+			return generateReply(ctx, personalizedProvider(ctx), prompt)
+		},
 		imageChat: func(ctx context.Context, prompt, mimeType string, data []byte) string {
-			return generateImageReply(ctx, provider, prompt, mimeType, data)
+			return generateImageReply(ctx, personalizedProvider(ctx), prompt, mimeType, data)
 		},
 	}
 	if router.project != "" {
@@ -203,6 +220,9 @@ func run(ctx context.Context) error {
 				if device.GetJID().ToNonAD() != owner {
 					return fmt.Errorf("a conta vinculada não corresponde a JARVIS_WHATSAPP_OWNER")
 				}
+				if err := router.startOnboarding(ctx); err != nil {
+					return fmt.Errorf("iniciar personalização da nova conta WhatsApp: %w", err)
+				}
 				log.Print("Conta do Jarvis vinculada")
 			default:
 				return fmt.Errorf("pareamento do WhatsApp: %s", item.Event)
@@ -226,6 +246,43 @@ func run(ctx context.Context) error {
 			prompt := selfPrompt(event.Info.MessageSource, owner, device.GetJID(), device.GetLID(), incomingText(event))
 			isImage := isImageMessage(event)
 			isVoice := !isImage && prompt == "" && isVoiceNote(event)
+			onboardingReply, onboardingHandled, onboardingErr := router.onboardingReply(
+				replyCtx,
+				string(event.Info.ID),
+				prompt,
+				isImage || isVoice,
+			)
+			if onboardingErr != nil {
+				log.Print("Falha ao processar o onboarding da conta WhatsApp")
+				cancel()
+				continue
+			}
+			if onboardingHandled {
+				cancel()
+				if onboardingReply != "" {
+					sendCtx, cancelSend := context.WithTimeout(ctx, 20*time.Second)
+					name := router.onboardingAssistantName(sendCtx, assistantName)
+					sendErr := sendWhatsAppReply(sendCtx, client, routesDB, event, name, onboardingReply, false)
+					cancelSend()
+					if sendErr != nil {
+						log.Print("Falha ao enviar pergunta de personalização no WhatsApp")
+					}
+				}
+				continue
+			}
+			if prompt != "/code" {
+				_, _, isPermissionCommand, _ := parsePermissionCommand(prompt)
+				if !isPermissionCommand {
+					ackCtx, cancelAck := context.WithTimeout(ctx, 10*time.Second)
+					claimed, claimErr := router.claimAcknowledgement(ackCtx, string(event.Info.ID))
+					if claimErr == nil && claimed {
+						if err := sendWhatsAppReply(ackCtx, client, routesDB, event, assistantName, "Recebido. Já estou preparando a resposta.", false); err != nil {
+							log.Print("Falha ao enviar confirmação de recebimento no WhatsApp")
+						}
+					}
+					cancelAck()
+				}
+			}
 			transcriptionFailed := false
 			imageFailed := false
 			imageMIME := ""
@@ -262,18 +319,33 @@ func run(ctx context.Context) error {
 				cancel()
 				continue
 			}
+			eventRouter := router
+			eventRouter.watchCode = func(sessionID string, previous opencode.Message, handledID string) {
+				originalEvent := event
+				go func() {
+					followUp := eventRouter.waitForCodeResponse(ctx, sessionID, previous, handledID)
+					if followUp == "" || ctx.Err() != nil {
+						return
+					}
+					sendCtx, cancelSend := context.WithTimeout(ctx, 20*time.Second)
+					defer cancelSend()
+					if err := sendWhatsAppReply(sendCtx, client, routesDB, originalEvent, assistantName, followUp, true); err != nil {
+						log.Print("Falha ao enviar atualização assíncrona do OpenCode")
+					}
+				}()
+			}
 			var reply string
 			var routeErr error
 			if imageFailed {
 				reply = "Não consegui encaminhar essa imagem. Envie uma imagem JPEG, PNG ou WebP de até 10 MiB."
 			} else if isImage {
-				reply, routeErr = router.replyImage(replyCtx, string(event.Info.ID), prompt, imageMIME, imageData)
+				reply, routeErr = eventRouter.replyImage(replyCtx, string(event.Info.ID), prompt, imageMIME, imageData)
 			} else if transcriptionFailed {
 				reply = prompt
 			} else if isVoice {
-				reply, routeErr = router.replyTranscription(replyCtx, string(event.Info.ID), prompt)
+				reply, routeErr = eventRouter.replyTranscription(replyCtx, string(event.Info.ID), prompt)
 			} else {
-				reply, routeErr = router.reply(replyCtx, string(event.Info.ID), prompt)
+				reply, routeErr = eventRouter.reply(replyCtx, string(event.Info.ID), prompt)
 			}
 			modeCtx, cancelMode := context.WithTimeout(ctx, 5*time.Second)
 			codeMode, modeErr := router.codeMode(modeCtx)
@@ -281,6 +353,7 @@ func run(ctx context.Context) error {
 			if routeErr == nil && modeErr != nil {
 				routeErr = modeErr
 			}
+			replyName := router.onboardingAssistantName(replyCtx, assistantName)
 			clear(imageData)
 			cancel()
 			if routeErr != nil {
@@ -289,27 +362,9 @@ func run(ctx context.Context) error {
 			if reply == "" {
 				continue
 			}
-			parts := splitWhatsAppMessage(formatWhatsAppMarkdown(reply), 12*1024-160)
-			if codeMode && len(parts) > 0 {
-				parts[len(parts)-1] += "\n\n*OpenCode*"
-			}
-			var sendErr error
-			for partIndex, part := range parts {
-				sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-				messageID := client.GenerateMessageID()
-				_, sendErr = routesDB.ExecContext(sendCtx, "INSERT OR IGNORE INTO jarvis_assistant_message_ids (message_id) VALUES (?)", string(messageID))
-				if sendErr == nil {
-					outgoing := &waE2E.Message{Conversation: proto.String(part)}
-					if partIndex == 0 {
-						outgoing = quotedWhatsAppReply(part, event)
-					}
-					_, sendErr = client.SendMessage(sendCtx, event.Info.Chat.ToNonAD(), outgoing, whatsmeow.SendRequestExtra{ID: messageID})
-				}
-				cancel()
-				if sendErr != nil {
-					break
-				}
-			}
+			sendCtx, cancelSend := context.WithTimeout(ctx, 20*time.Second)
+			sendErr := sendWhatsAppReply(sendCtx, client, routesDB, event, replyName, reply, codeMode)
+			cancelSend()
 			if sendErr != nil {
 				if !isVoice && !isImage && prompt == "/code" {
 					return fmt.Errorf("não consegui confirmar o modo pelo WhatsApp; roteamento interrompido")
@@ -318,6 +373,40 @@ func run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func sendWhatsAppReply(
+	ctx context.Context,
+	client *whatsmeow.Client,
+	routesDB *sql.DB,
+	event *events.Message,
+	assistantName, reply string,
+	codeMode bool,
+) error {
+	if event == nil || event.Info.Chat.IsEmpty() || strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	parts := splitWhatsAppMessage(formatWhatsAppAssistantReply(assistantName, reply), 12*1024-160)
+	if codeMode && len(parts) > 0 {
+		parts[len(parts)-1] += "\n\n*OpenCode*"
+	}
+	for partIndex, part := range parts {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		messageID := client.GenerateMessageID()
+		if _, err := routesDB.ExecContext(ctx, "INSERT OR IGNORE INTO jarvis_assistant_message_ids (message_id) VALUES (?)", string(messageID)); err != nil {
+			return err
+		}
+		outgoing := &waE2E.Message{Conversation: proto.String(part)}
+		if partIndex == 0 {
+			outgoing = quotedWhatsAppReply(part, event)
+		}
+		if _, err := client.SendMessage(ctx, event.Info.Chat.ToNonAD(), outgoing, whatsmeow.SendRequestExtra{ID: messageID}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func quotedWhatsAppReply(text string, event *events.Message) *waE2E.Message {

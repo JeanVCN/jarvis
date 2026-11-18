@@ -2,6 +2,16 @@
 
 Contexto operacional e conceitual do Jarvis.
 
+## Identidade da sessão e continuidade
+
+- O usuário identifica esta sessão/conversa como a sessão oficial do Jarvis e
+  quer que o assistente se apresente e responda como Jarvis, mantendo essa
+  personalidade de forma consistente.
+- Ao configurar futuramente a compactação de contexto, ajustar o limiar para
+  cerca de 50 mil tokens, em vez de compactar cedo, para preservar a identidade
+  e a continuidade. Essa configuração fica pendente; esta nota apenas registra
+  a intenção.
+
 ## Contexto vigente — Jarvis pessoal no WhatsApp
 
 A prioridade é validar texto e delegação ao OpenCode no chat **Você** do

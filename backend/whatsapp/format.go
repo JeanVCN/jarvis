@@ -25,21 +25,16 @@ func formatWhatsAppMarkdown(input string) string {
 	for i := 0; i < len(lines); {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			marker := "```"
-			if strings.HasPrefix(trimmed, "~~~") {
-				marker = "~~~"
-			}
-			language := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmed, marker), marker))
+		if marker, markerLen, language, ok := parseFence(trimmed); ok {
 			if language != "" {
 				out = append(out, "Código ("+language+"):")
 			}
-			out = append(out, "```")
+			out = append(out, marker)
 			i++
 			for i < len(lines) {
 				current := strings.TrimSpace(lines[i])
-				if strings.HasPrefix(current, marker) {
-					out = append(out, "```")
+				if isClosingFence(current, marker[0], markerLen) {
+					out = append(out, marker)
 					i++
 					break
 				}
@@ -93,6 +88,33 @@ func formatWhatsAppMarkdown(input string) string {
 		i++
 	}
 	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func formatWhatsAppAssistantReply(name, input string) string {
+	return "*" + whatsappAssistantName(name) + "*\n\n" + formatWhatsAppMarkdown(input)
+}
+
+func parseFence(line string) (marker string, markerLen int, language string, ok bool) {
+	if len(line) == 0 || (line[0] != '`' && line[0] != '~') {
+		return "", 0, "", false
+	}
+	for markerLen < len(line) && line[markerLen] == line[0] {
+		markerLen++
+	}
+	if markerLen < 3 {
+		return "", 0, "", false
+	}
+	marker = strings.Repeat(line[:1], markerLen)
+	language = strings.TrimSpace(line[markerLen:])
+	return marker, markerLen, language, true
+}
+
+func isClosingFence(line string, marker byte, minLen int) bool {
+	n := 0
+	for n < len(line) && line[n] == marker {
+		n++
+	}
+	return n >= minLen && strings.TrimSpace(line[n:]) == ""
 }
 
 func splitTableRow(line string) []string {

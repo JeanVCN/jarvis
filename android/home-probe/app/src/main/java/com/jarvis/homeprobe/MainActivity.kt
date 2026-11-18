@@ -137,7 +137,11 @@ class MainActivity : ComponentActivity() {
                         if (isLight) {
                             val roomName = device.roomId?.id?.let(rooms::get)
                             val location = roomName?.let { " — $it" } ?: ""
-                            lines += "• ${device.name}$location"
+                            val capabilities = buildList {
+                                if (device.has(OnOff)) add("liga/desliga")
+                                if (device.has(LevelControl)) add("intensidade")
+                            }.ifEmpty { listOf("nenhuma capacidade consultada") }
+                            lines += "• ${device.name}$location\n  Capacidades: ${capabilities.joinToString(", ")}"
                         }
                     }
                 }

@@ -5,6 +5,7 @@ import type { AllowedProject } from "./projects.js";
 
 const operationIDPattern = /^[a-f0-9]{32}$/;
 const maxDiffBytes = 64 * 1024;
+const jarvisCodeModel = { id: "gpt-6-luna", providerID: "openai" } as const;
 export type InlineImage = { mime: "image/jpeg" | "image/png" | "image/webp"; base64: string };
 
 export type SafeSession = {
@@ -14,6 +15,10 @@ export type SafeSession = {
   outcome: "succeeded" | "failed" | "interrupted" | null;
   state: "idle" | "running";
 };
+
+export function isSessionBusy(time: { busy?: number; idle?: number }): boolean {
+  return time.busy !== undefined && (time.idle === undefined || time.busy > time.idle);
+}
 
 export function validOperationID(value: unknown): value is string {
   return typeof value === "string" && operationIDPattern.test(value);
@@ -50,6 +55,7 @@ export async function createProjectSession(
 ): Promise<SafeSession> {
   const session = await client.session.create({
     location: { directory: project.directory },
+    model: jarvisCodeModel,
     permissions: [{ action: "*", resource: "*", effect: "ask" }],
     metadata: { jarvis_operation_id: operationID },
   });
@@ -58,7 +64,7 @@ export async function createProjectSession(
     title: session.title ?? "Nova sessão",
     updated_at: session.time.updated,
     outcome: session.outcome ?? null,
-    state: session.time.busy ? "running" : "idle",
+    state: isSessionBusy(session.time) ? "running" : "idle",
   };
 }
 
@@ -78,7 +84,7 @@ export async function findCreatedSession(
     title: session.title ?? "Nova sessão",
     updated_at: session.time.updated,
     outcome: session.outcome ?? null,
-    state: session.time.busy ? "running" : "idle",
+    state: isSessionBusy(session.time) ? "running" : "idle",
   };
 }
 
@@ -90,6 +96,7 @@ export async function sendProjectPrompt(
   image?: InlineImage,
 ): Promise<{ inbox_id: string }> {
   await assertSessionProject(client, project, sessionID);
+  await client.session.switchModel({ sessionID, model: jarvisCodeModel });
   const files = image ? [{
     uri: `data:${image.mime};base64,${image.base64}`,
     source: { type: "inline" as const },
@@ -150,7 +157,7 @@ export async function interruptProjectSession(
   sessionID: string,
 ): Promise<void> {
   const session = await assertSessionProject(client, project, sessionID);
-  if (!session.time.busy) throw new Error("session_not_running");
+  if (!isSessionBusy(session.time)) throw new Error("session_not_running");
   await client.session.interrupt({ sessionID });
 }
 
@@ -209,8 +216,9 @@ export async function readProjectSession(
       title: session.title ?? "Sem título",
       updated_at: session.time.updated,
       outcome: session.outcome ?? null,
-      state: session.time.busy ? "running" : "idle",
+      state: isSessionBusy(session.time) ? "running" : "idle",
     },
+    state: isSessionBusy(session.time) ? "running" : "idle",
     messages: publicMessages,
     diff: publicDiff,
     permissions: permissions.map((permission) => ({
