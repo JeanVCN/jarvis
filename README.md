@@ -566,9 +566,33 @@ duplicado no SQLite.
 
 ### OpenCode no chat Você
 
-Envie `/code` e espere a confirmação antes de enviar a tarefa. Envie
-`/code` novamente para voltar ao GPT do chat normal. O modo e o vínculo da
-sessão do OpenCode são persistidos por número e sobrevivem ao reinício.
+O modo `/code` exige autenticação TOTP compatível com Google Authenticator.
+Com o serviço WhatsApp parado, configure o autenticador no notebook:
+
+```bash
+cd backend/whatsapp
+JARVIS_WHATSAPP_OWNER=5511999999999 go run . totp-setup
+```
+
+Escaneie o QR exibido no terminal. O segredo fica no SQLite local da conta,
+com permissões restritas; mantenha o serviço parado durante o cadastro. Para
+trocar a chave, use `totp-reset` no mesmo comando. Depois, envie `/code` no
+WhatsApp. O Jarvis pedirá o código; responda somente com os seis dígitos atuais
+do aplicativo autenticador. O código vale uma única vez, há limite de
+tentativas e a autorização dura dez minutos. Se ela expirar durante o uso, o
+Jarvis pausa o encaminhamento e pede o código novamente. A autorização também
+expira ao reiniciar o serviço. `/code` pode ser desativado sem autenticação.
+
+Todos os prompts, anexos, formulários e decisões `/aprovar` ou `/rejeitar` em
+`/code` exigem autorização ativa. Códigos enviados por transcrição de voz ou
+legenda de imagem são recusados e não são encaminhados. O código digitado fica
+visível no histórico do WhatsApp para dispositivos vinculados à conta; use um
+dispositivo confiável e não compartilhe esse chat. Esta autenticação protege
+somente `/code`; `/cmd` continua fora de escopo.
+
+Depois da confirmação, envie a tarefa. Envie `/code` novamente para voltar ao
+GPT do chat normal. O modo e o vínculo da sessão do OpenCode são persistidos
+por número e sobrevivem ao reinício.
 
 Configure `JARVIS_WHATSAPP_OPENCODE_PROJECT` com o ID de um projeto da
 allowlist do bridge, `JARVIS_OPENCODE_BRIDGE_TOKEN` com a credencial interna e,

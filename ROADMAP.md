@@ -143,25 +143,27 @@ real ainda está pendente.
   [protocolo V2 de threads no repositório oficial](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
   e [modelo de thread persistida](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs).
 
-### Autorização adicional para `/code` e `/cmd` — opções para testar depois
+### TOTP para `/code` — implementado; `/cmd` segue adiado
 
-- Não implementar agora. Conversas comuns com GPT permanecem disponíveis sem
-  esse passo adicional; exigir a autorização antes de ativar `/code` ou executar
-  `/cmd`.
-- Opção A — restringir por aparelho remetente. Verificar se o `Sender` AD JID do
-  WhatsApp identifica de forma confiável o telefone autorizado. O SQLite do
-  `whatsmeow` identifica a sessão vinculada do Jarvis, não o aparelho que enviou
-  cada mensagem. Revalidar após troca/reinstalação de aparelho; bloquear se o
-  identificador estiver ausente ou inesperado.
-- Opção B — TOTP em um app autenticador compatível, como Google Authenticator.
-  Avaliar se um código autoriza a entrada em `/code` por uma janela curta e se
-  `/cmd` exige autorização por ação ou por sessão curta. Nunca encaminhar segredo
-  ou código ao GPT/OpenCode, registrar códigos, aceitar reutilização, ou permitir
-  tentativas ilimitadas. Proteger o segredo TOTP no host e limitar tentativas.
-- Testar as opções separadamente e em conjunto. Um TOTP digitado no mesmo chat
-  WhatsApp fica visível no histórico da conta; avaliar esse risco se outro
-  dispositivo vinculado puder ler o chat. Não tratar autenticação TOTP como
-  substituto da autorização por dispositivo no futuro bridge Android.
+- O modo OpenCode requer código TOTP compatível com Google Authenticator. O
+  segredo é cadastrado localmente no SQLite da conta WhatsApp; o cadastro e a
+  troca da chave usam `totp-setup` e `totp-reset` com o serviço parado.
+- `/code` inicia a autenticação; o usuário responde com os seis dígitos do
+  autenticador, e só então o modo OpenCode é ativado. O código vale uma vez,
+  há limite de tentativas e a autorização dura dez minutos. Se expirar durante
+  a sessão ou após reinício, o encaminhamento pausa e pede nova autenticação.
+  A checagem vale para prompts, imagens, formulários e decisões de permissão.
+  Código enviado por voz ou legenda de imagem é recusado e não chega aos
+  provedores.
+- O código digitado permanece visível no histórico WhatsApp para dispositivos
+  vinculados; o usuário deve manter esses dispositivos confiáveis. TOTP não é
+  substituto da autorização por dispositivo prevista para a futura ponte
+  Android.
+- `/cmd` não está implementado e não recebe proteção TOTP nesta etapa. Conversas
+  comuns com GPT não exigem o autenticador.
+- Futuro: avaliar restrição por aparelho remetente. O SQLite identifica a
+  sessão vinculada do Jarvis, não o aparelho que enviou cada mensagem; não
+  presumir essa identificação sem validação.
 
 ### Notas de voz — primeira integração implementada; validar no piloto
 

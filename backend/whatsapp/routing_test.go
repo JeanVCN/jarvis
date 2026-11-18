@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base32"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jean/jarvis/backend/internal/opencode"
 )
@@ -32,6 +34,10 @@ func TestRoutingPersistsPerAccountAndDoesNotFallBack(t *testing.T) {
 		if err := router.init(ctx); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO jarvis_totp(id,secret,authorized_until)
+			VALUES(1,'JBSWY3DPEHPK3PXP',?) ON CONFLICT(id) DO UPDATE SET authorized_until=excluded.authorized_until,last_step=-1`, time.Now().Add(time.Hour).Unix()); err != nil {
+			t.Fatal(err)
+		}
 		return router
 	}
 	check := func(router messageRouter, id, input, want string) {
@@ -42,14 +48,17 @@ func TestRoutingPersistsPerAccountAndDoesNotFallBack(t *testing.T) {
 		}
 	}
 	first := open("first")
-	check(first, "msg1", "/code", "Modo OpenCode ativado")
+	check(first, "msg1", "/code", "Autenticação necessária")
+	check(first, "msg1-auth", testTOTPCode(), "Modo OpenCode ativado")
 	if err := first.db.Close(); err != nil {
 		t.Fatal(err)
 	}
 
 	first = open("first")
 	check(first, "msg1", "/code", "")
-	check(first, "msg2", "conteúdo do projeto", "OpenCode indisponível")
+	check(first, "msg2", "conteúdo do projeto", "A autorização do `/code` expirou")
+	check(first, "msg2-auth", testTOTPCode(), "Modo OpenCode ativado")
+	check(first, "msg2-task", "conteúdo do projeto", "OpenCode indisponível")
 	check(open("second"), "msg2", "oi", "GPT: oi")
 	check(first, "msg3", "/code", "Modo OpenCode desativado")
 	check(first, "msg2", "conteúdo do projeto", "")
@@ -117,8 +126,12 @@ func TestCodeRoutingUsesLocalBridgeAndReusesSession(t *testing.T) {
 	if err := router.init(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO jarvis_totp(id,secret,authorized_until) VALUES(1,'JBSWY3DPEHPK3PXP',?)`, time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
 	for _, msg := range []struct{ id, input, prefix string }{
-		{"1", "/code", "Modo OpenCode ativado"},
+		{"1", "/code", "Autenticação necessária"},
+		{"1-auth", testTOTPCode(), "Modo OpenCode ativado"},
 		{"2", "tarefa local", "resposta direta"},
 		{"3", "tarefa local", "resposta direta"},
 	} {
@@ -130,4 +143,10 @@ func TestCodeRoutingUsesLocalBridgeAndReusesSession(t *testing.T) {
 	if created != 1 || prompts != 2 {
 		t.Fatalf("created %d sessions and sent %d prompts", created, prompts)
 	}
+}
+
+func testTOTPCode() string {
+	secret, _ := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString("JBSWY3DPEHPK3PXP")
+	now := time.Now()
+	return totpValue(secret, now.Unix()/totpPeriodSeconds)
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -73,7 +74,10 @@ func (r messageRouter) init(ctx context.Context) error {
 			PRIMARY KEY (kind, position)
 		);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	return initializeTOTP(ctx, r.db)
 }
 
 func (r messageRouter) codeMode(ctx context.Context) (bool, error) {
@@ -152,26 +156,108 @@ func (r messageRouter) replyWithModePolicy(ctx context.Context, id, text string,
 	if err != nil || inserted == 0 {
 		return "", err
 	}
-	toggle := allowModeToggle && text == "/code"
-	if toggle {
-		if _, err := tx.ExecContext(ctx, "UPDATE jarvis_route SET code = NOT code WHERE id = 1"); err != nil {
+	var currentCode bool
+	if err := tx.QueryRowContext(ctx, "SELECT code FROM jarvis_route WHERE id = 1").Scan(&currentCode); err != nil {
+		return "", err
+	}
+	var challengePending bool
+	if err := tx.QueryRowContext(ctx, "SELECT challenge_pending FROM jarvis_totp WHERE id = 1").Scan(&challengePending); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	if isTOTPCommand(text) {
+		if err := tx.Commit(); err != nil {
 			return "", err
 		}
+		return r.handleTOTPCommand(allowModeToggle), nil
 	}
-	var code bool
-	if err := tx.QueryRowContext(ctx, "SELECT code FROM jarvis_route WHERE id = 1").Scan(&code); err != nil {
-		return "", err
+	toggle := allowModeToggle && text == "/code"
+	if toggle && currentCode {
+		if _, err := tx.ExecContext(ctx, "UPDATE jarvis_route SET code=0 WHERE id=1"); err != nil {
+			return "", err
+		}
+		_, _ = tx.ExecContext(ctx, "UPDATE jarvis_totp SET challenge_pending=0,authorized_until=0 WHERE id=1")
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		return "Modo OpenCode desativado. As próximas mensagens vão para o GPT normal.", nil
+	}
+	if toggle {
+		configured, _, err := totpAuthorization(ctx, tx)
+		if err != nil {
+			return "", err
+		}
+		if !configured {
+			if err := tx.Commit(); err != nil {
+				return "", err
+			}
+			return "O autenticador ainda não foi configurado. Pare o serviço e execute `JARVIS_WHATSAPP_OWNER=... go run . totp-setup` no terminal local.", nil
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE jarvis_totp SET challenge_pending=1,authorized_until=0 WHERE id=1"); err != nil {
+			return "", err
+		}
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		return "Autenticação necessária para entrar no `/code`. Responda agora somente com os seis dígitos do Google Authenticator.", nil
+	}
+	if challengePending {
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		if !allowModeToggle {
+			return "A autenticação está pendente. Envie o código de seis dígitos como mensagem digitada; não encaminhei esse conteúdo.", nil
+		}
+		if !totpCodePattern.MatchString(strings.TrimSpace(text)) {
+			return "Autenticação pendente. Responda somente com os seis dígitos do Google Authenticator.", nil
+		}
+		message, valid, err := r.verifyTOTP(ctx, strings.TrimSpace(text), time.Now())
+		if err != nil {
+			return "Não consegui verificar o autenticador. Nenhuma ação foi enviada ao OpenCode.", nil
+		}
+		if !valid {
+			return message, nil
+		}
+		activate, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		defer activate.Rollback()
+		if _, err := activate.ExecContext(ctx, "UPDATE jarvis_route SET code=1 WHERE id=1"); err != nil {
+			return "", err
+		}
+		if _, err := activate.ExecContext(ctx, "UPDATE jarvis_totp SET challenge_pending=0 WHERE id=1"); err != nil {
+			return "", err
+		}
+		if err := activate.Commit(); err != nil {
+			return "", err
+		}
+		return message + " Modo OpenCode ativado; pode enviar a tarefa.", nil
+	}
+	if currentCode {
+		configured, authorized, err := totpAuthorization(ctx, tx)
+		if err != nil {
+			return "", err
+		}
+		if !configured {
+			if err := tx.Commit(); err != nil {
+				return "", err
+			}
+			return "O autenticador ainda não foi configurado. Pare o serviço e execute `JARVIS_WHATSAPP_OWNER=... go run . totp-setup` no terminal local. Envie `/code` para sair do modo OpenCode.", nil
+		}
+		if !authorized {
+			if _, err := tx.ExecContext(ctx, "UPDATE jarvis_totp SET challenge_pending=1 WHERE id=1"); err != nil {
+				return "", err
+			}
+			if err := tx.Commit(); err != nil {
+				return "", err
+			}
+			return "A autorização do `/code` expirou. Responda agora somente com os seis dígitos do Google Authenticator para continuar.", nil
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return "", err
 	}
-	if toggle {
-		if code {
-			return "Modo OpenCode ativado. Envie /code para voltar ao chat normal.", nil
-		}
-		return "Modo OpenCode desativado. As próximas mensagens vão para o GPT normal.", nil
-	}
-	if code {
+	if currentCode {
 		if image != nil {
 			return r.codeImageReply(ctx, text, image.mime, image.data), nil
 		}

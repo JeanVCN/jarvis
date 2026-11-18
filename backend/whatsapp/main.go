@@ -35,6 +35,15 @@ import (
 var phoneNumber = regexp.MustCompile(`^[1-9][0-9]{7,14}$`)
 
 func main() {
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || (os.Args[1] != "totp-setup" && os.Args[1] != "totp-reset") {
+			log.Fatal("uso: whatsapp [totp-setup|totp-reset]")
+		}
+		if err := manageTOTP(context.Background(), os.Args[1]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx); err != nil && ctx.Err() == nil {
